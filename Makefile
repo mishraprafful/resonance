@@ -9,15 +9,43 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-## --- Dev stack ---
-dev-up: ## Start the local dev stack (Postgres, ClickHouse, MinIO, Redpanda, Redis)
+## --- One-command local app (try it in the browser) ---
+up: dev-up ## Bring up EVERYTHING (stack + services + web) and print the URL
+	@bash scripts/dev.sh wait
+	@if ! .venv/bin/python -c "import resonance_api, resonance_workers, uvicorn" >/dev/null 2>&1 \
+		|| [ ! -d web/node_modules ]; then bash scripts/dev.sh venv; fi
+	@bash scripts/dev.sh start
+	@echo "\n  ▶ Open http://localhost:5280  —  run 'make demo' to populate a sample run\n"
+down: ## Stop the app services AND the dev stack
+	-@bash scripts/dev.sh stop
+	$(COMPOSE) down
+restart: down up ## Restart everything
+demo: ## Log a sample training run (metrics + audio) so the UI has data
+	@RESONANCE_MODE=online RESONANCE_API_URL=http://localhost:8000 \
+	  RESONANCE_INGEST_URL=http://localhost:18080 \
+	  .venv/bin/python examples/train_demo.py
+app-install: ## Create the venv + install python/web deps
+	@bash scripts/dev.sh venv
+app-status: ## Show which app services are running
+	@bash scripts/dev.sh status
+app-logs: ## Tail app service logs (make app-logs svc=api)
+	@bash scripts/dev.sh logs $(svc)
+open: ## Open the app in your browser (macOS)
+	@open http://localhost:5173 2>/dev/null || echo "open http://localhost:5173"
+
+## --- Dev stack only ---
+dev-up: ## Start just the data stack (Postgres, ClickHouse, MinIO, Redpanda, Redis)
 	$(COMPOSE) up -d
-dev-down: ## Stop the local dev stack
+dev-down: ## Stop the dev stack
 	$(COMPOSE) down
 dev-logs: ## Tail dev stack logs
 	$(COMPOSE) logs -f
 dev-ps: ## Show dev stack status
 	$(COMPOSE) ps
+dev-reset: ## DESTROY local data (needed after a schema change) and restart the stack
+	$(COMPOSE) down
+	rm -rf deploy/dev/.data
+	$(COMPOSE) up -d
 
 ## --- Install / build ---
 sdk-install: ## Install the Python SDK (editable)

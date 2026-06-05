@@ -45,3 +45,6 @@ services/ingest/ingest
 
 # TS build info
 *.tsbuildinfo
+
+# Local dev orchestration (pids/logs)
+.run/
