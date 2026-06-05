@@ -30,5 +30,10 @@ class Settings:
     redis_url: str = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     audio_page_size: int = int(os.environ.get("RESONANCE_AUDIO_PAGE_SIZE", "50"))
 
+    # Multi-tenancy. dev_open: when no Bearer token is supplied, fall back to the default org as an
+    # owner (local-dev convenience). Set RESONANCE_DEV_OPEN=false to require tokens (prod posture).
+    dev_open: bool = os.environ.get("RESONANCE_DEV_OPEN", "true").lower() == "true"
+    default_rate_limit_per_min: int = int(os.environ.get("RESONANCE_RATE_LIMIT_PER_MIN", "600"))
+
 
 settings = Settings()

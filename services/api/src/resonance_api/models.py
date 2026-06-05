@@ -141,3 +141,52 @@ class Dataset(BaseModel):
 
 class DatasetDetail(Dataset):
     items: list[dict] = Field(default_factory=list)
+
+
+# --- multi-tenancy: orgs, tokens, members ---
+class OrgCreate(BaseModel):
+    slug: str
+    name: str | None = None
+    storage_quota_bytes: int | None = None
+
+
+class Org(BaseModel):
+    id: str
+    slug: str
+    name: str
+    storage_quota_bytes: int | None = None
+    storage_used_bytes: int = 0
+    created_at: datetime
+
+
+class TokenCreate(BaseModel):
+    name: str
+    role: str = "member"  # owner | admin | member
+
+
+class TokenInfo(BaseModel):
+    id: str
+    name: str
+    role: str
+    prefix: str | None = None
+    last_used_at: datetime | None = None
+    created_at: datetime
+
+
+class TokenCreated(TokenInfo):
+    token: str  # the secret — shown exactly once
+
+
+class OrgCreated(Org):
+    owner_token: str  # bootstrap owner token, shown once
+
+
+class MemberCreate(BaseModel):
+    email: str
+    role: str = "member"
+
+
+class Member(BaseModel):
+    user_id: str
+    email: str
+    role: str

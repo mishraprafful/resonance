@@ -22,8 +22,21 @@ def pool() -> ConnectionPool:
 
 @contextmanager
 def connection() -> Iterator:
+    """Plain connection — used for auth/management tables (orgs, api_tokens, members) which are
+    intentionally not under RLS so the auth bootstrap can run before any tenant is selected."""
     with pool().connection() as conn:
         conn.row_factory = dict_row
+        yield conn
+
+
+@contextmanager
+def tenant_connection(org_id: str) -> Iterator:
+    """Tenant-scoped connection: sets `app.current_org` for this transaction so Postgres RLS
+    filters every row to this org (defense-in-depth atop the app-level WHERE org_id clauses)."""
+    with pool().connection() as conn:
+        conn.row_factory = dict_row
+        with conn.cursor() as cur:
+            cur.execute("SELECT set_config('app.current_org', %s, true)", (org_id,))
         yield conn
 
 

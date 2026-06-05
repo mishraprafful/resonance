@@ -1,39 +1,81 @@
-"""Tenant resolution.
+"""Authentication + RBAC.
 
-Phase 1: resolve the org from a Bearer API token (sha256 of the token vs api_tokens.token_hash);
-if no token is supplied, fall back to the seeded default org so local dev works out of the box.
-Full RBAC + SSO arrives in Phase 4.
+A request authenticates with a Bearer API token (`Authorization: Bearer rsn_...`). The token maps
+to an org and a role. For local dev, when `dev_open` is set and no token is supplied, the request
+falls back to the default org as an owner. Set RESONANCE_DEV_OPEN=false for the production posture
+(tokens required).
 """
 
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
-from . import db
+from . import db, ratelimit
 from .settings import settings
+
+# Role hierarchy: higher number = more privilege.
+ROLE_RANK = {"member": 1, "admin": 2, "owner": 3}
 
 
 def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def resolve_org(authorization: str | None = Header(default=None)) -> str:
-    """Return the org_id for the request. Raises 401 on an invalid token."""
-    with db.connection() as conn, conn.cursor() as cur:
-        if authorization and authorization.lower().startswith("bearer "):
-            token = authorization.split(" ", 1)[1].strip()
+@dataclass
+class Principal:
+    org_id: str
+    role: str
+    token_id: str | None = None  # None for the dev-open fallback
+
+    def rank(self) -> int:
+        return ROLE_RANK.get(self.role, 0)
+
+
+def principal(authorization: str | None = Header(default=None)) -> Principal:
+    """Resolve the calling principal (org + role) from the Bearer token, or the dev-open fallback."""
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        with db.connection() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT org_id FROM api_tokens WHERE token_hash = %s", (token_hash(token),)
+                "UPDATE api_tokens SET last_used_at = now() WHERE token_hash = %s "
+                "RETURNING id, org_id, role",
+                (token_hash(token),),
             )
             row = cur.fetchone()
-            if not row:
-                raise HTTPException(status_code=401, detail="invalid api token")
-            return str(row["org_id"])
+        if not row:
+            raise HTTPException(status_code=401, detail="invalid api token")
+        return Principal(org_id=str(row["org_id"]), role=row["role"], token_id=str(row["id"]))
 
-        cur.execute("SELECT id FROM orgs WHERE slug = %s", (settings.default_org_slug,))
-        row = cur.fetchone()
+    if settings.dev_open:
+        with db.connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT id FROM orgs WHERE slug = %s", (settings.default_org_slug,))
+            row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=500, detail="default org missing")
-        return str(row["id"])
+        return Principal(org_id=str(row["id"]), role="owner")
+
+    raise HTTPException(status_code=401, detail="missing api token")
+
+
+def resolve_org(p: Principal = Depends(principal)) -> str:
+    """Tenant id for data endpoints, with a per-tenant rate-limit check applied here so every
+    data path is covered in one place."""
+    ratelimit.check(p.org_id)
+    return p.org_id
+
+
+def require_role(min_role: str):
+    """Dependency factory gating an endpoint on a minimum org role."""
+    needed = ROLE_RANK[min_role]
+
+    def _dep(p: Principal = Depends(principal)) -> Principal:
+        if p.rank() < needed:
+            raise HTTPException(
+                status_code=403, detail=f"requires role >= {min_role} (have {p.role})"
+            )
+        return p
+
+    return _dep

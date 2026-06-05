@@ -294,9 +294,15 @@ Redpanda-backed, autoscaled derivation workers.
   compare/datasets UIs build; dataset dedup verified (same content → one version); ratings
   round-trip. *Deferred within Phase 3+:* multi-resolution peaks/tiled spectrograms, resumable
   multipart upload, optional browse-only rendition, Go media gateway + CDN.
-- [ ] **Phase 4 — Multi-tenancy hardening:** orgs/RBAC/SSO, API tokens, per-tenant isolation,
-  quotas, rate limits, tiered lifecycle + CDN.
-- [ ] **Phase 5 — Scale & ops:** ClickHouse sharding, autoscaling, retention/lifecycle automation,
+- [~] **Phase 4 — Multi-tenancy hardening:** orgs + hashed **API tokens** + **RBAC**
+  (owner/admin/member, role-gated endpoints), **per-tenant isolation** (app-level org scoping +
+  Postgres **RLS** with FORCE policies + least-privilege `resonance_app` DB role setting
+  `app.current_org`), **storage quotas** (413 over limit) and **per-tenant rate limits** (Redis
+  fixed-window, 429). *Exit met:* cross-tenant denial verified at both API and raw-DB (RLS) level;
+  RBAC 403; quota 413; rate-limit 429. *Deferred:* SSO/OIDC (needs external IdP) and tiered
+  lifecycle + CDN (cloud infra) — see Phase 5.
+- [ ] **Phase 5 — Scale & ops (+ Phase 4 deferrals):** SSO/OIDC login, tiered storage lifecycle +
+  CDN, ClickHouse sharding, autoscaling, retention/lifecycle automation,
   observability (OTel/Prometheus/Grafana), Helm/Terraform/ArgoCD, load tests.
 
 ---
@@ -361,3 +367,13 @@ Redpanda-backed, autoscaled derivation workers.
   manifest; version id = hash of member set, so identical datasets collapse to one version) + dataset
   browser. Verified: pagination (`next_cursor`), Redis presign cache hit, dataset dedup (one
   version), ratings round-trip. All suites green; web builds.
+- **2026-06-05:** Phase 4 (multi-tenancy hardening) core landed + verified. Orgs + hashed API tokens
+  + RBAC (owner/admin/member); auth via `Principal` (Bearer token → org+role, dev-open fallback for
+  local). **Isolation is two-layered:** mandatory app-level org scoping AND Postgres RLS (FORCE
+  policies on all 6 data tables) enforced by running the API as a non-superuser `resonance_app` role
+  that sets `app.current_org` per request (the worker keeps the superuser DSN to derive across
+  tenants). Per-tenant **storage quota** (413) and **rate limit** (Redis fixed-window, 429).
+  Verified: org B sees 0 of dev's projects (API and raw-DB/RLS), member→403/owner→200, quota→413,
+  rate-limit allowed 3 / blocked 3. DEFERRED to Phase 5: SSO/OIDC (needs external IdP), tiered
+  lifecycle + CDN. Dev: API connects as `resonance_app`, worker as superuser; seeded `dev` owner
+  token; schema change ⇒ `make dev-reset`.

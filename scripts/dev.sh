@@ -25,7 +25,11 @@ export CLICKHOUSE_URL="${CLICKHOUSE_URL:-http://localhost:8123}"
 export CLICKHOUSE_DB="${CLICKHOUSE_DB:-resonance}"
 export CLICKHOUSE_USER="${CLICKHOUSE_USER:-resonance}"
 export CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-resonance}"
-export POSTGRES_DSN="${POSTGRES_DSN:-postgresql://resonance:resonance@localhost:5432/resonance}"
+# Two DB roles: the API uses the least-privilege `resonance_app` (RLS-enforced, tenant-scoped);
+# the worker uses the superuser (bypasses RLS to derive across all tenants).
+export PG_SUPER_DSN="${PG_SUPER_DSN:-postgresql://resonance:resonance@localhost:5432/resonance}"
+export PG_APP_DSN="${PG_APP_DSN:-postgresql://resonance_app:resonance_app@localhost:5432/resonance}"
+export POSTGRES_DSN="$PG_APP_DSN"   # API picks this up
 export S3_ENDPOINT="${S3_ENDPOINT:-http://localhost:9100}"
 export S3_ACCESS_KEY="${S3_ACCESS_KEY:-resonance}"
 export S3_SECRET_KEY="${S3_SECRET_KEY:-resonance-secret}"
@@ -92,7 +96,7 @@ start() {
   echo "==> starting app services"
   _spawn ingest "$RUN/ingest-bin"
   _spawn api    "$VENV/bin/uvicorn" resonance_api.main:app --host 127.0.0.1 --port "$API_PORT"
-  _spawn worker "$PY" -m resonance_workers.main
+  _spawn worker env POSTGRES_DSN="$PG_SUPER_DSN" "$PY" -m resonance_workers.main
   _spawn web    "$ROOT/web/node_modules/.bin/vite" "$ROOT/web" --port "$WEB_PORT" --strictPort
   echo
   echo "==> Resonance is up. Open: http://localhost:$WEB_PORT"

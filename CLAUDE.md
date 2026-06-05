@@ -83,14 +83,22 @@ publish an unmeasured number as certified. Re-certify when a hot path changes.
 
 ## Current status
 
-**Phases 1–3 complete and verified end-to-end.** Tracking (SDK → ingest → ClickHouse; control plane
-serves runs + downsampled metrics), **audio first-class** (`log_audio` dedup→presigned PUT→register,
-CAS store, derivation worker for peaks/spectrogram/probes, audio panel), and **audio UX depth**:
-keyset-paginated audio listings with **lazy Redis-cached presigned URLs**, **A/B synced compare +
-blind-test** (original quality, ratings via `/v1/ratings`), and **content-addressed dataset
-versioning** (`log_dataset` + dataset browser). Run `examples/train_demo.py` against `make up`.
-**Next:** Phase 4 — multi-tenancy hardening (orgs/RBAC/SSO, quotas, isolation, tiered lifecycle +
-CDN). See `ARCHITECTURE.md` §9.
+**Phases 1–4 complete and verified end-to-end.** Tracking, **audio first-class**, **audio UX depth**
+(A/B compare + blind-test at original quality, lazy-presigned pagination, dataset versioning), and
+**multi-tenancy hardening**: orgs + hashed **API tokens** + **RBAC** (owner/admin/member), two-layer
+**isolation** (app-level org scoping + Postgres **RLS** via the least-privilege `resonance_app` role
+setting `app.current_org`), per-tenant **storage quotas** (413) and **rate limits** (429). Run
+`examples/train_demo.py` against `make up`. **Next:** Phase 5 — scale & ops + the Phase 4 deferrals
+(SSO/OIDC, tiered lifecycle + CDN). See `ARCHITECTURE.md` §9.
+
+Auth/tenancy specifics:
+- API connects to Postgres as **`resonance_app`** (non-superuser → RLS applies); the **worker** uses
+  the superuser DSN (bypasses RLS to derive across tenants). `make up` wires both DSNs.
+- Bearer API tokens (`rsn_…`, sha256-hashed); `Principal` carries org+role; `require_role` /
+  `_require_org_admin` gate management endpoints. **dev-open** fallback (no token → `dev` org owner)
+  is on locally; set `RESONANCE_DEV_OPEN=false` for the prod posture.
+- Data endpoints use `db.tenant_connection(org_id)` (sets the RLS GUC); auth/management tables
+  (orgs/api_tokens/org_members/users) are **not** under RLS and use `db.connection()`.
 
 Gotchas / current deviations from the target architecture (all documented in `ARCHITECTURE.md`):
 - **A/B comparison serves ORIGINAL quality** (`/v1/assets/{sha}/url?kind=original`) — never a lossy

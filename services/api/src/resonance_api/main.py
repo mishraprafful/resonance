@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import json
 
+import secrets
+
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from . import clickhouse, db, storage
-from .auth import resolve_org
+from .auth import Principal, principal, resolve_org, token_hash
 from .models import (
     AssetPrepareRequest,
     AssetPrepareResponse,
@@ -22,7 +24,12 @@ from .models import (
     Dataset,
     DatasetCreate,
     DatasetDetail,
+    Member,
+    MemberCreate,
     MetricSeries,
+    Org,
+    OrgCreate,
+    OrgCreated,
     PresignResponse,
     Project,
     Rating,
@@ -30,6 +37,9 @@ from .models import (
     Run,
     RunCreate,
     RunUpdate,
+    TokenCreate,
+    TokenCreated,
+    TokenInfo,
 )
 from .settings import settings
 
@@ -44,21 +54,6 @@ class Health(BaseModel):
 @app.get("/healthz", response_model=Health)
 def healthz() -> Health:
     return Health()
-
-
-@app.on_event("startup")
-def _startup() -> None:
-    # Idempotent dev migration so a running stack (which won't re-run init.sql) has new tables.
-    with db.connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS ratings ("
-            " id UUID PRIMARY KEY DEFAULT gen_random_uuid(),"
-            " org_id UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,"
-            " test_id TEXT NOT NULL, asset_sha TEXT NOT NULL, run_id UUID, label TEXT,"
-            " score INT NOT NULL, blind BOOLEAN NOT NULL DEFAULT FALSE,"
-            " created_at TIMESTAMPTZ NOT NULL DEFAULT now())"
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS ratings_test_idx ON ratings (org_id, test_id)")
 
 
 @app.on_event("shutdown")
@@ -85,7 +80,7 @@ def _get_or_create_project(conn, org_id: str, slug: str, name: str | None) -> di
 # --- projects ---
 @app.get("/v1/projects", response_model=list[Project])
 def list_projects(org_id: str = Depends(resolve_org)) -> list[Project]:
-    with db.connection() as conn, conn.cursor() as cur:
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT * FROM projects WHERE org_id = %s ORDER BY created_at DESC", (org_id,)
         )
@@ -95,7 +90,7 @@ def list_projects(org_id: str = Depends(resolve_org)) -> list[Project]:
 # --- runs ---
 @app.post("/v1/runs", response_model=Run)
 def create_run(body: RunCreate, org_id: str = Depends(resolve_org)) -> Run:
-    with db.connection() as conn:
+    with db.tenant_connection(org_id) as conn:
         project = _get_or_create_project(conn, org_id, body.project, None)
         with conn.cursor() as cur:
             cur.execute(
@@ -108,7 +103,7 @@ def create_run(body: RunCreate, org_id: str = Depends(resolve_org)) -> Run:
 
 @app.get("/v1/projects/{slug}/runs", response_model=list[Run])
 def list_runs(slug: str, org_id: str = Depends(resolve_org)) -> list[Run]:
-    with db.connection() as conn, conn.cursor() as cur:
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT r.* FROM runs r JOIN projects p ON p.id = r.project_id "
             "WHERE r.org_id = %s AND p.slug = %s ORDER BY r.created_at DESC",
@@ -119,7 +114,7 @@ def list_runs(slug: str, org_id: str = Depends(resolve_org)) -> list[Run]:
 
 @app.get("/v1/runs/{run_id}", response_model=Run)
 def get_run(run_id: str, org_id: str = Depends(resolve_org)) -> Run:
-    with db.connection() as conn, conn.cursor() as cur:
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
         cur.execute("SELECT * FROM runs WHERE org_id = %s AND id = %s", (org_id, run_id))
         row = cur.fetchone()
         if not row:
@@ -129,7 +124,7 @@ def get_run(run_id: str, org_id: str = Depends(resolve_org)) -> Run:
 
 @app.patch("/v1/runs/{run_id}", response_model=Run)
 def update_run(run_id: str, body: RunUpdate, org_id: str = Depends(resolve_org)) -> Run:
-    with db.connection() as conn, conn.cursor() as cur:
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
         cur.execute(
             "UPDATE runs SET state = %s, finished_at = now() "
             "WHERE org_id = %s AND id = %s RETURNING *",
@@ -164,12 +159,23 @@ def prepare_asset(
     """Dedup check + presigned upload coordination. Returns no upload_url when content exists,
     so re-logging identical audio uploads zero bytes."""
     key = storage.blob_key(org_id, body.sha256)
-    with db.connection() as conn, conn.cursor() as cur:
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT 1 FROM assets WHERE org_id = %s AND sha256 = %s", (org_id, body.sha256)
         )
         if cur.fetchone() or storage.exists(key):
-            return AssetPrepareResponse(exists=True, storage_key=key)
+            return AssetPrepareResponse(exists=True, storage_key=key)  # dedup: already stored
+        # Enforce the tenant storage quota before issuing an upload URL.
+        cur.execute("SELECT storage_quota_bytes FROM orgs WHERE id = %s", (org_id,))
+        quota = cur.fetchone()["storage_quota_bytes"]
+        if quota is not None:
+            cur.execute("SELECT COALESCE(SUM(size_bytes), 0) AS used FROM assets WHERE org_id = %s", (org_id,))
+            used = cur.fetchone()["used"]
+            if used + body.size_bytes > quota:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"storage quota exceeded ({used}+{body.size_bytes} > {quota} bytes)",
+                )
     return AssetPrepareResponse(
         exists=False, storage_key=key, upload_url=storage.presign_put(key, body.media_type)
     )
@@ -188,7 +194,7 @@ def log_audio(body: AudioLogCreate, org_id: str = Depends(resolve_org)) -> Audio
             (org_id, sha, body.media_type, size, storage.blob_key(org_id, sha), body.sample_rate),
         )
 
-    with db.connection() as conn:
+    with db.tenant_connection(org_id) as conn:
         with conn.cursor() as cur:
             _upsert_asset(cur, body.asset_sha, body.size_bytes)
             # Register the reference too so it is tracked + derived (waveform/spectrogram for A/B).
@@ -212,7 +218,7 @@ def log_audio(body: AudioLogCreate, org_id: str = Depends(resolve_org)) -> Audio
 @app.get("/v1/runs/{run_id}/audio/keys")
 def list_audio_keys(run_id: str, org_id: str = Depends(resolve_org)) -> dict:
     """Distinct audio keys for a run (so the UI can browse per key without scanning everything)."""
-    with db.connection() as conn, conn.cursor() as cur:
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT DISTINCT key FROM audio_logs WHERE org_id = %s AND run_id = %s ORDER BY key",
             (org_id, run_id),
@@ -242,7 +248,7 @@ def list_audio(
         params += [int(c_step), c_id]
     params.append(limit + 1)  # fetch one extra to detect a next page
 
-    with db.connection() as conn, conn.cursor() as cur:
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT al.id, al.key, al.step, al.caption, al.asset_sha, al.reference_sha, "
             "       a.sample_rate, a.duration_s, a.derived_at, a.derivations "
@@ -283,7 +289,7 @@ def presign_asset(
     if kind == "original":
         key = storage.blob_key(org_id, sha)
     elif kind in ("peaks", "spectrogram"):
-        with db.connection() as conn, conn.cursor() as cur:
+        with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT derivations FROM assets WHERE org_id = %s AND sha256 = %s", (org_id, sha)
             )
@@ -300,7 +306,7 @@ def presign_asset(
 # --- listening-test ratings (A/B compare) ---
 @app.post("/v1/ratings", response_model=Rating)
 def create_rating(body: RatingCreate, org_id: str = Depends(resolve_org)) -> Rating:
-    with db.connection() as conn, conn.cursor() as cur:
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
         cur.execute(
             "INSERT INTO ratings (org_id, test_id, asset_sha, run_id, label, score, blind) "
             "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING *",
@@ -311,7 +317,7 @@ def create_rating(body: RatingCreate, org_id: str = Depends(resolve_org)) -> Rat
 
 @app.get("/v1/ratings", response_model=list[Rating])
 def list_ratings(test_id: str, org_id: str = Depends(resolve_org)) -> list[Rating]:
-    with db.connection() as conn, conn.cursor() as cur:
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT * FROM ratings WHERE org_id = %s AND test_id = %s ORDER BY created_at",
             (org_id, test_id),
@@ -323,7 +329,7 @@ def list_ratings(test_id: str, org_id: str = Depends(resolve_org)) -> list[Ratin
 @app.post("/v1/datasets", response_model=Dataset)
 def create_dataset(body: DatasetCreate, org_id: str = Depends(resolve_org)) -> Dataset:
     """Register a content-addressed dataset version (idempotent on org+name+version)."""
-    with db.connection() as conn, conn.cursor() as cur:
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
         cur.execute(
             "INSERT INTO dataset_versions (org_id, project_id, name, version, manifest) "
             "VALUES (%s,%s,%s,%s,%s) ON CONFLICT (org_id, name, version) DO NOTHING",
@@ -340,7 +346,7 @@ def create_dataset(body: DatasetCreate, org_id: str = Depends(resolve_org)) -> D
 
 @app.get("/v1/datasets", response_model=list[Dataset])
 def list_datasets(org_id: str = Depends(resolve_org)) -> list[Dataset]:
-    with db.connection() as conn, conn.cursor() as cur:
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT id, name, version, project_id, created_at, "
             "       jsonb_array_length(manifest) AS item_count "
@@ -352,7 +358,7 @@ def list_datasets(org_id: str = Depends(resolve_org)) -> list[Dataset]:
 
 @app.get("/v1/datasets/{dataset_id}", response_model=DatasetDetail)
 def get_dataset(dataset_id: str, org_id: str = Depends(resolve_org)) -> DatasetDetail:
-    with db.connection() as conn, conn.cursor() as cur:
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT id, name, version, project_id, created_at, manifest, "
             "       jsonb_array_length(manifest) AS item_count "
@@ -372,6 +378,125 @@ def _dataset_row(r: dict) -> dict:
         "id": str(r["id"]), "name": r["name"], "version": r["version"],
         "project_id": str(r["project_id"]) if r["project_id"] else None,
         "item_count": r["item_count"] or 0, "created_at": r["created_at"],
+    }
+
+
+# --- multi-tenancy: orgs, tokens, members (auth tables; not under RLS) ---
+def _new_token() -> tuple[str, str, str]:
+    """Return (secret, sha256, display_prefix). The secret is shown to the caller exactly once."""
+    secret = "rsn_" + secrets.token_urlsafe(24)
+    return secret, token_hash(secret), secret[:12]
+
+
+def _require_org_admin(p: Principal, org_id: str) -> None:
+    if p.org_id != org_id or p.rank() < 2:  # admin
+        raise HTTPException(status_code=403, detail="requires admin on this org")
+
+
+@app.post("/v1/orgs", response_model=OrgCreated)
+def create_org(body: OrgCreate, p: Principal = Depends(principal)) -> OrgCreated:
+    """Provision a tenant and return a bootstrap owner token (shown once). Self-hosted bootstrap op;
+    gate behind a platform admin in production."""
+    secret, h, prefix = _new_token()
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM orgs WHERE slug = %s", (body.slug,))
+        if cur.fetchone():
+            raise HTTPException(status_code=409, detail="org slug already exists")
+        cur.execute(
+            "INSERT INTO orgs (slug, name, storage_quota_bytes) VALUES (%s,%s,%s) RETURNING *",
+            (body.slug, body.name or body.slug, body.storage_quota_bytes),
+        )
+        org = cur.fetchone()
+        cur.execute(
+            "INSERT INTO api_tokens (org_id, name, token_hash, prefix, role) "
+            "VALUES (%s,%s,%s,%s,'owner')",
+            (org["id"], "owner", h, prefix),
+        )
+    return OrgCreated(**_org_row(org), owner_token=secret)
+
+
+@app.get("/v1/org", response_model=Org)
+def current_org(org_id: str = Depends(resolve_org)) -> Org:
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM orgs WHERE id = %s", (org_id,))
+        org = cur.fetchone()
+        cur.execute("SELECT COALESCE(SUM(size_bytes),0) AS used FROM assets WHERE org_id = %s", (org_id,))
+        used = cur.fetchone()["used"]
+    return Org(**_org_row(org), storage_used_bytes=used)
+
+
+@app.post("/v1/orgs/{org_id}/tokens", response_model=TokenCreated)
+def create_token(org_id: str, body: TokenCreate, p: Principal = Depends(principal)) -> TokenCreated:
+    _require_org_admin(p, org_id)
+    if body.role not in ("owner", "admin", "member"):
+        raise HTTPException(status_code=400, detail="invalid role")
+    secret, h, prefix = _new_token()
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO api_tokens (org_id, name, token_hash, prefix, role) "
+            "VALUES (%s,%s,%s,%s,%s) RETURNING *",
+            (org_id, body.name, h, prefix, body.role),
+        )
+        return TokenCreated(**_token_row(cur.fetchone()), token=secret)
+
+
+@app.get("/v1/orgs/{org_id}/tokens", response_model=list[TokenInfo])
+def list_tokens(org_id: str, p: Principal = Depends(principal)) -> list[TokenInfo]:
+    _require_org_admin(p, org_id)
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM api_tokens WHERE org_id = %s ORDER BY created_at", (org_id,))
+        return [TokenInfo(**_token_row(r)) for r in cur.fetchall()]
+
+
+@app.delete("/v1/orgs/{org_id}/tokens/{token_id}")
+def revoke_token(org_id: str, token_id: str, p: Principal = Depends(principal)) -> dict:
+    _require_org_admin(p, org_id)
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM api_tokens WHERE org_id = %s AND id = %s", (org_id, token_id))
+        return {"revoked": cur.rowcount}
+
+
+@app.get("/v1/orgs/{org_id}/members", response_model=list[Member])
+def list_members(org_id: str, p: Principal = Depends(principal)) -> list[Member]:
+    if p.org_id != org_id:
+        raise HTTPException(status_code=403, detail="not a member of this org")
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT m.user_id, u.email, m.role FROM org_members m "
+            "JOIN users u ON u.id = m.user_id WHERE m.org_id = %s ORDER BY u.email",
+            (org_id,),
+        )
+        return [Member(user_id=str(r["user_id"]), email=r["email"], role=r["role"]) for r in cur.fetchall()]
+
+
+@app.post("/v1/orgs/{org_id}/members", response_model=Member)
+def add_member(org_id: str, body: MemberCreate, p: Principal = Depends(principal)) -> Member:
+    _require_org_admin(p, org_id)
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO users (email) VALUES (%s) ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email RETURNING id",
+            (body.email,),
+        )
+        user_id = cur.fetchone()["id"]
+        cur.execute(
+            "INSERT INTO org_members (org_id, user_id, role) VALUES (%s,%s,%s) "
+            "ON CONFLICT (org_id, user_id) DO UPDATE SET role = EXCLUDED.role",
+            (org_id, user_id, body.role),
+        )
+    return Member(user_id=str(user_id), email=body.email, role=body.role)
+
+
+def _org_row(r: dict) -> dict:
+    return {
+        "id": str(r["id"]), "slug": r["slug"], "name": r["name"],
+        "storage_quota_bytes": r["storage_quota_bytes"], "created_at": r["created_at"],
+    }
+
+
+def _token_row(r: dict) -> dict:
+    return {
+        "id": str(r["id"]), "name": r["name"], "role": r["role"], "prefix": r["prefix"],
+        "last_used_at": r["last_used_at"], "created_at": r["created_at"],
     }
 
 

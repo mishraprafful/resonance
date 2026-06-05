@@ -5,10 +5,12 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TABLE IF NOT EXISTS orgs (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    slug        TEXT UNIQUE NOT NULL,
-    name        TEXT NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug               TEXT UNIQUE NOT NULL,
+    name               TEXT NOT NULL,
+    storage_quota_bytes BIGINT,            -- NULL = unlimited
+    rate_limit_per_min  INT,               -- NULL = unlimited
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -18,11 +20,22 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS api_tokens (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id      UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    token_hash  TEXT NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id       UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    token_hash   TEXT NOT NULL UNIQUE,    -- sha256(token); the token itself is shown once
+    prefix       TEXT,                    -- non-secret display prefix, e.g. rsn_ab12…
+    role         TEXT NOT NULL DEFAULT 'member',  -- owner | admin | member
+    last_used_at TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Org membership (humans). Roles mirror token roles for now.
+CREATE TABLE IF NOT EXISTS org_members (
+    org_id   UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    user_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role     TEXT NOT NULL DEFAULT 'member',
+    PRIMARY KEY (org_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS projects (
@@ -108,6 +121,40 @@ CREATE TABLE IF NOT EXISTS ratings (
 );
 CREATE INDEX IF NOT EXISTS ratings_test_idx ON ratings (org_id, test_id);
 
--- Seed a dev org so the SDK can talk to a real tenant out of the box.
+-- ── Tenant isolation: Row-Level Security on data tables (defense-in-depth) ──────────────────────
+-- The API connects as the least-privilege role `resonance_app` and runs every request with
+-- `SET LOCAL app.current_org = <org>`. RLS then filters every row to that org even if an app-level
+-- WHERE clause is ever forgotten. Auth tables (orgs/api_tokens/org_members/users) are intentionally
+-- NOT under RLS so the auth bootstrap (resolve a token -> its org) can run before any org is set.
+DO $$
+DECLARE t TEXT;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['projects','runs','assets','audio_logs','dataset_versions','ratings']
+  LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
+    EXECUTE format(
+      'CREATE POLICY org_isolation ON %I USING '
+      '(org_id = current_setting(''app.current_org'', true)::uuid) '
+      'WITH CHECK (org_id = current_setting(''app.current_org'', true)::uuid)', t);
+  END LOOP;
+END $$;
+
+-- Least-privilege application role (non-superuser, so RLS actually applies to it).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'resonance_app') THEN
+    CREATE ROLE resonance_app LOGIN PASSWORD 'resonance_app';
+  END IF;
+END $$;
+GRANT USAGE ON SCHEMA public TO resonance_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO resonance_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO resonance_app;
+
+-- Seed a dev org + an owner token so local dev works out of the box.
 INSERT INTO orgs (slug, name) VALUES ('dev', 'Dev Org')
     ON CONFLICT (slug) DO NOTHING;
+INSERT INTO api_tokens (org_id, name, token_hash, prefix, role)
+SELECT id, 'dev-owner', encode(digest('rsn_dev_token', 'sha256'), 'hex'), 'rsn_dev', 'owner'
+FROM orgs WHERE slug = 'dev'
+ON CONFLICT (token_hash) DO NOTHING;
