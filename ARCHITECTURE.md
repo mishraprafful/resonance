@@ -301,6 +301,14 @@ Redpanda-backed, autoscaled derivation workers.
   fixed-window, 429). *Exit met:* cross-tenant denial verified at both API and raw-DB (RLS) level;
   RBAC 403; quota 413; rate-limit 429. *Deferred:* SSO/OIDC (needs external IdP) and tiered
   lifecycle + CDN (cloud infra) — see Phase 5.
+- [x] **Phase 4b — Browser auth (username/password):** first-run **admin bootstrap**, **signup**
+  (create a team or request to join an existing one), **login/logout** with Redis-backed httpOnly
+  sessions (pbkdf2 passwords), **team switching**, and **join-request approval** by team
+  owners/admins. `principal()` accepts a session cookie (→ user's active team + role) alongside the
+  Bearer API-token and dev-open paths, so the same RBAC/RLS/quota/rate-limit controls apply to
+  browser users. Web: auth gate + bootstrap/login/signup screens + Account/Teams page. *Exit met:*
+  bootstrap→admin, signup-create→owner, signup-join→pending→approve→member, session data scoped per
+  active team (Acme sees 0 of Dev's projects), dev-open still serves the SDK.
 - [ ] **Phase 5 — Scale & ops (+ Phase 4 deferrals):** SSO/OIDC login, tiered storage lifecycle +
   CDN, ClickHouse sharding, autoscaling, retention/lifecycle automation,
   observability (OTel/Prometheus/Grafana), Helm/Terraform/ArgoCD, load tests.
@@ -377,3 +385,11 @@ Redpanda-backed, autoscaled derivation workers.
   rate-limit allowed 3 / blocked 3. DEFERRED to Phase 5: SSO/OIDC (needs external IdP), tiered
   lifecycle + CDN. Dev: API connects as `resonance_app`, worker as superuser; seeded `dev` owner
   token; schema change ⇒ `make dev-reset`.
+- **2026-06-05:** Phase 4b — browser auth (username/password) added. First-run admin bootstrap;
+  signup (create team → owner / join existing → pending request); login/logout with Redis-backed
+  httpOnly sessions (pbkdf2); team switcher; join-request approve/deny by team owner/admin. Session
+  cookie feeds `principal()` (active team + role) so RBAC/RLS/quota/rate-limit apply to browser
+  users too; dev-open still serves the SDK. Verified end-to-end (bootstrap→admin, create→owner,
+  join→pending→approve→member, per-team data scoping: Acme 0 vs Dev 1). Web: auth gate +
+  bootstrap/login/signup + Account/Teams page. Team = org; projects live under teams; users can
+  belong to many teams and request to join more.

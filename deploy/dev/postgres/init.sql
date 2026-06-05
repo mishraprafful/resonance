@@ -14,9 +14,25 @@ CREATE TABLE IF NOT EXISTS orgs (
 );
 
 CREATE TABLE IF NOT EXISTS users (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username      TEXT UNIQUE,             -- login id (username/password auth)
+    email         TEXT UNIQUE,
+    password_hash TEXT,                     -- pbkdf2$iter$salt$hash
+    is_admin      BOOLEAN NOT NULL DEFAULT FALSE,  -- platform admin (first-run bootstrap user)
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Requests to join a team (org). Created at signup ("join existing") or later; an org owner/admin
+-- (or a platform admin) approves. Not under RLS: a requester isn't a member yet.
+CREATE TABLE IF NOT EXISTS membership_requests (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email       TEXT UNIQUE NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    org_id      UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    role        TEXT NOT NULL DEFAULT 'member',
+    status      TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | denied
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    decided_at  TIMESTAMPTZ,
+    UNIQUE (user_id, org_id)
 );
 
 CREATE TABLE IF NOT EXISTS api_tokens (

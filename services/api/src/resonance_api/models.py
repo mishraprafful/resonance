@@ -190,3 +190,26 @@ class Member(BaseModel):
     user_id: str
     email: str
     role: str
+
+
+# --- accounts / sessions (username+password auth) ---
+class Credentials(BaseModel):
+    username: str
+    password: str
+
+
+class SignupRequest(BaseModel):
+    username: str
+    password: str
+    team_mode: str = "create"        # create | join
+    team_slug: str | None = None     # for join, or slug of the new team
+    team_name: str | None = None     # for create
+
+
+class SwitchTeam(BaseModel):
+    org_id: str
+
+
+class TeamCreate(BaseModel):
+    slug: str
+    name: str | None = None

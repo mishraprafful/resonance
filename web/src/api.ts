@@ -72,19 +72,49 @@ export interface DatasetDetail extends Dataset {
   items: DatasetItem[];
 }
 
+export interface Team {
+  org_id: string;
+  slug: string;
+  name: string;
+  role: string;
+}
+
+export interface Me {
+  username: string;
+  is_admin: boolean;
+  current_org: string | null;
+  teams: Team[];
+  pending_requests: { slug: string; status: string }[];
+}
+
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+  const res = await fetch(path, { credentials: "same-origin" });
+  if (!res.ok) throw new ApiError(res.status, `${path} -> ${res.status}`);
   return res.json() as Promise<T>;
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
+async function post<T>(path: string, body?: unknown, method = "POST"): Promise<T> {
   const res = await fetch(path, {
-    method: "POST",
+    method,
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+  if (!res.ok) {
+    let detail = `${res.status}`;
+    try {
+      detail = (await res.json()).detail ?? detail;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, detail);
+  }
   return res.json() as Promise<T>;
 }
 
@@ -126,4 +156,25 @@ export const api = {
 
   datasets: () => get<Dataset[]>("/v1/datasets"),
   dataset: (id: string) => get<DatasetDetail>(`/v1/datasets/${id}`),
+
+  // --- auth / accounts ---
+  bootstrapStatus: () => get<{ needs_bootstrap: boolean }>("/v1/auth/bootstrap-status"),
+  bootstrap: (username: string, password: string) =>
+    post<{ username: string }>("/v1/auth/bootstrap", { username, password }),
+  signup: (body: {
+    username: string; password: string; team_mode: "create" | "join";
+    team_slug?: string; team_name?: string;
+  }) => post<{ username: string; current_org: string | null; pending: boolean }>("/v1/auth/signup", body),
+  login: (username: string, password: string) =>
+    post<{ username: string; current_org: string | null }>("/v1/auth/login", { username, password }),
+  logout: () => post<{ ok: boolean }>("/v1/auth/logout"),
+  me: () => get<Me>("/v1/auth/me"),
+  switchTeam: (org_id: string) => post<{ current_org: string }>("/v1/auth/switch-team", { org_id }),
+  listTeams: () => get<{ teams: { id: string; slug: string; name: string }[] }>("/v1/teams").then((r) => r.teams),
+  createTeam: (slug: string, name: string) => post<{ org_id: string }>("/v1/teams", { slug, name }),
+  requestJoin: (orgId: string) => post<{ status: string }>(`/v1/teams/${orgId}/join-request`),
+  listRequests: (orgId: string) =>
+    get<{ requests: { id: string; username: string; status: string }[] }>(`/v1/teams/${orgId}/requests`).then((r) => r.requests),
+  decideRequest: (orgId: string, reqId: string, action: "approve" | "deny") =>
+    post<{ status: string }>(`/v1/teams/${orgId}/requests/${reqId}/${action}`),
 };

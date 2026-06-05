@@ -13,7 +13,7 @@ import secrets
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
-from . import clickhouse, db, storage
+from . import auth_routes, clickhouse, db, storage
 from .auth import Principal, principal, resolve_org, token_hash
 from .models import (
     AssetPrepareRequest,
@@ -44,6 +44,7 @@ from .models import (
 from .settings import settings
 
 app = FastAPI(title="Resonance API", version="0.1.0")
+app.include_router(auth_routes.router)
 
 
 class Health(BaseModel):

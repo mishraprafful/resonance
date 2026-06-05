@@ -11,9 +11,9 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Cookie, Depends, Header, HTTPException
 
-from . import db, ratelimit
+from . import accounts, db, ratelimit
 from .settings import settings
 
 # Role hierarchy: higher number = more privilege.
@@ -34,8 +34,12 @@ class Principal:
         return ROLE_RANK.get(self.role, 0)
 
 
-def principal(authorization: str | None = Header(default=None)) -> Principal:
-    """Resolve the calling principal (org + role) from the Bearer token, or the dev-open fallback."""
+def principal(
+    authorization: str | None = Header(default=None),
+    session: str | None = Cookie(default=None, alias=accounts.COOKIE_NAME),
+) -> Principal:
+    """Resolve the calling principal (org + role) from, in order: a Bearer API token (SDK/CI), a
+    browser session cookie (its current team + the user's role there), or the dev-open fallback."""
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
         with db.connection() as conn, conn.cursor() as cur:
@@ -48,6 +52,21 @@ def principal(authorization: str | None = Header(default=None)) -> Principal:
         if not row:
             raise HTTPException(status_code=401, detail="invalid api token")
         return Principal(org_id=str(row["org_id"]), role=row["role"], token_id=str(row["id"]))
+
+    sess = accounts.read_session(session)
+    if sess:
+        org = sess.get("current_org")
+        if not org:
+            raise HTTPException(status_code=403, detail="no active team — create or join one")
+        with db.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT role FROM org_members WHERE user_id = %s AND org_id = %s",
+                (sess["user_id"], org),
+            )
+            row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=403, detail="not a member of the active team")
+        return Principal(org_id=str(org), role=row["role"])
 
     if settings.dev_open:
         with db.connection() as conn, conn.cursor() as cur:
