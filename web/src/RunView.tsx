@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api, type MetricPoint, type Run } from "./api";
 import { LineChart } from "./LineChart";
+import { AudioPanel } from "./AudioPanel";
 
 const POLL_MS = 2000;
 
@@ -56,6 +57,7 @@ export function RunView({ runId }: { runId: string }) {
         ))}
         {Object.keys(series).length === 0 && <p>No metrics logged yet.</p>}
       </div>
+      <AudioPanel runId={runId} />
     </section>
   );
 }

@@ -18,5 +18,13 @@ class Settings:
     clickhouse_password: str = os.environ.get("CLICKHOUSE_PASSWORD", "resonance")
     default_org_slug: str = os.environ.get("RESONANCE_DEFAULT_ORG", "dev")
 
+    # Object store (audio/blob plane) — S3-compatible (MinIO in dev).
+    s3_endpoint: str = os.environ.get("S3_ENDPOINT", "http://localhost:9100")
+    s3_region: str = os.environ.get("S3_REGION", "us-east-1")
+    s3_access_key: str = os.environ.get("S3_ACCESS_KEY", "resonance")
+    s3_secret_key: str = os.environ.get("S3_SECRET_KEY", "resonance-secret")
+    s3_bucket: str = os.environ.get("S3_BUCKET", "resonance-blobs")
+    presign_ttl_s: int = int(os.environ.get("RESONANCE_PRESIGN_TTL", "3600"))
+
 
 settings = Settings()

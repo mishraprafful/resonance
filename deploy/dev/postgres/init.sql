@@ -52,12 +52,21 @@ CREATE TABLE IF NOT EXISTS assets (
     org_id      UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
     media_type  TEXT NOT NULL,           -- e.g. audio/wav
     size_bytes  BIGINT NOT NULL,
+    storage_key TEXT NOT NULL,           -- content-addressed object key
     sample_rate INT,
     channels    INT,
     duration_s  DOUBLE PRECISION,
+    lufs        DOUBLE PRECISION,        -- integrated loudness (probe)
+    peak_dbfs   DOUBLE PRECISION,
+    -- Async derivations (waveform peaks, spectrogram, streamable rendition) produced by workers.
+    derived_at  TIMESTAMPTZ,             -- NULL => still needs derivation (DB-backed work queue)
+    derivations JSONB NOT NULL DEFAULT '{}',  -- {peaks_key, spectrogram_key, rendition_key}
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (org_id, sha256)         -- dedup is per-tenant
 );
+-- Workers claim derivation work by scanning for rows where derived_at IS NULL.
+CREATE INDEX IF NOT EXISTS assets_pending_derivation_idx
+    ON assets (created_at) WHERE derived_at IS NULL;
 
 -- Per-run audio log entries referencing an asset (the first-class audio primitive).
 CREATE TABLE IF NOT EXISTS audio_logs (

@@ -11,9 +11,19 @@ import json
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
-from . import clickhouse, db
+from . import clickhouse, db, storage
 from .auth import resolve_org
-from .models import MetricSeries, Project, Run, RunCreate, RunUpdate
+from .models import (
+    AssetPrepareRequest,
+    AssetPrepareResponse,
+    AudioLogCreate,
+    AudioLogEntry,
+    MetricSeries,
+    Project,
+    Run,
+    RunCreate,
+    RunUpdate,
+)
 
 app = FastAPI(title="Resonance API", version="0.1.0")
 
@@ -121,6 +131,96 @@ def run_metrics(
     rows = clickhouse.metric_series(org_id, run_id, metric)
     points = [{"step": int(r["last_step"]), "value": float(r["value"])} for r in rows]
     return MetricSeries(run_id=run_id, metric=metric, points=points)
+
+
+# --- audio (first-class, content-addressed) ---
+@app.post("/v1/assets/prepare", response_model=AssetPrepareResponse)
+def prepare_asset(
+    body: AssetPrepareRequest, org_id: str = Depends(resolve_org)
+) -> AssetPrepareResponse:
+    """Dedup check + presigned upload coordination. Returns no upload_url when content exists,
+    so re-logging identical audio uploads zero bytes."""
+    key = storage.blob_key(org_id, body.sha256)
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM assets WHERE org_id = %s AND sha256 = %s", (org_id, body.sha256)
+        )
+        if cur.fetchone() or storage.exists(key):
+            return AssetPrepareResponse(exists=True, storage_key=key)
+    return AssetPrepareResponse(
+        exists=False, storage_key=key, upload_url=storage.presign_put(key, body.media_type)
+    )
+
+
+@app.post("/v1/audio", response_model=AudioLogEntry)
+def log_audio(body: AudioLogCreate, org_id: str = Depends(resolve_org)) -> AudioLogEntry:
+    """Register an uploaded asset (idempotent on org+sha) and a per-run audio log entry.
+    A new asset is left with derived_at NULL so a worker picks it up for derivation."""
+
+    def _upsert_asset(cur, sha: str, size: int) -> None:
+        cur.execute(
+            "INSERT INTO assets "
+            "(org_id, sha256, media_type, size_bytes, storage_key, sample_rate) "
+            "VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (org_id, sha256) DO NOTHING",
+            (org_id, sha, body.media_type, size, storage.blob_key(org_id, sha), body.sample_rate),
+        )
+
+    with db.connection() as conn:
+        with conn.cursor() as cur:
+            _upsert_asset(cur, body.asset_sha, body.size_bytes)
+            # Register the reference too so it is tracked + derived (waveform/spectrogram for A/B).
+            if body.reference_sha:
+                _upsert_asset(cur, body.reference_sha, 0)
+            cur.execute(
+                "INSERT INTO audio_logs "
+                "(org_id, run_id, key, step, asset_sha, reference_sha, caption) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                (org_id, body.run_id, body.key, body.step, body.asset_sha,
+                 body.reference_sha, body.caption),
+            )
+            audio_log_id = str(cur.fetchone()["id"])
+    return AudioLogEntry(
+        id=audio_log_id, key=body.key, step=body.step, caption=body.caption,
+        asset_sha=body.asset_sha, reference_sha=body.reference_sha,
+        sample_rate=body.sample_rate, duration_s=body.duration_s,
+    )
+
+
+@app.get("/v1/runs/{run_id}/audio", response_model=list[AudioLogEntry])
+def list_audio(run_id: str, org_id: str = Depends(resolve_org)) -> list[AudioLogEntry]:
+    """List a run's audio logs with presigned URLs for the audio, reference, and derivations."""
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT al.id, al.key, al.step, al.caption, al.asset_sha, al.reference_sha, "
+            "       a.sample_rate, a.duration_s, a.derived_at, a.derivations "
+            "FROM audio_logs al "
+            "LEFT JOIN assets a ON a.org_id = al.org_id AND a.sha256 = al.asset_sha "
+            "WHERE al.org_id = %s AND al.run_id = %s ORDER BY al.key, al.step",
+            (org_id, run_id),
+        )
+        rows = cur.fetchall()
+    out: list[AudioLogEntry] = []
+    for r in rows:
+        deriv = r.get("derivations") or {}
+        out.append(
+            AudioLogEntry(
+                id=str(r["id"]), key=r["key"], step=r["step"], caption=r["caption"],
+                asset_sha=r["asset_sha"], reference_sha=r["reference_sha"],
+                sample_rate=r["sample_rate"], duration_s=r["duration_s"],
+                derived=r["derived_at"] is not None,
+                audio_url=storage.presign_get(storage.blob_key(org_id, r["asset_sha"])),
+                reference_url=(
+                    storage.presign_get(storage.blob_key(org_id, r["reference_sha"]))
+                    if r["reference_sha"] else None
+                ),
+                peaks_url=storage.presign_get(deriv["peaks_key"]) if deriv.get("peaks_key") else None,
+                spectrogram_url=(
+                    storage.presign_get(deriv["spectrogram_key"])
+                    if deriv.get("spectrogram_key") else None
+                ),
+            )
+        )
+    return out
 
 
 def _stringify_ids(row: dict) -> dict:

@@ -22,6 +22,22 @@ export interface MetricPoint {
   value: number;
 }
 
+export interface AudioEntry {
+  id: string;
+  key: string;
+  step: number | null;
+  caption: string | null;
+  asset_sha: string;
+  reference_sha: string | null;
+  sample_rate: number | null;
+  duration_s: number | null;
+  derived: boolean;
+  audio_url: string | null;
+  reference_url: string | null;
+  peaks_url: string | null;
+  spectrogram_url: string | null;
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${path} -> ${res.status}`);
@@ -38,4 +54,5 @@ export const api = {
     get<{ points: MetricPoint[] }>(
       `/v1/runs/${runId}/metrics?metric=${encodeURIComponent(metric)}`
     ).then((r) => r.points),
+  audio: (runId: string) => get<AudioEntry[]>(`/v1/runs/${runId}/audio`),
 };

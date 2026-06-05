@@ -141,7 +141,10 @@ run.finish()
 - **Stream → ClickHouse consumer:** batches metric events into ClickHouse (async inserts).
 - **Control/Query API (Python FastAPI):** projects/runs CRUD, config, asset metadata, dataset
   manifests, chart queries (server-side downsampling), search, RBAC. Shares Pydantic models with the
-  SDK.
+  SDK. **Audio coordination lives here, off the ingest hot path** (audio is logged every N steps —
+  low-frequency control-plane work, and it keeps Postgres + the S3 client in one service):
+  `POST /v1/assets/prepare` (dedup + presigned PUT), `POST /v1/audio` (register asset + log), and
+  `GET /v1/runs/{id}/audio` (presigned playback/derivation URLs).
 - **Live updates:** SSE/WebSocket pushes new metric points to open run views.
 
 > **Language split rationale:** Go for the two perf-critical, mostly-stateless network paths
@@ -219,9 +222,14 @@ run.finish()
   Control API (projects/runs CRUD + downsampled metric query), web UI with polling live charts +
   config panel. *Exit met:* `examples/train_demo.py` logs scalars end-to-end (SDK → ingest →
   ClickHouse) and they read back through the API; verified 270k pts landed under a concurrent probe.
-- [ ] **Phase 2 — Audio first-class:** `log_audio`, CAS object store + dedup + presigned upload,
-  audio worker (transcode + peaks + spectrogram), Media Gateway, UI audio panel with
-  player/waveform/spectrogram. *Exit:* log per-step samples and play+inspect them in the UI.
+- [x] **Phase 2 — Audio first-class:** `log_audio` upload flow (dedup check → direct-to-store
+  presigned PUT → register), CAS object store with per-tenant prefixes, async derivation worker
+  (waveform peaks + spectrogram + probes via a DB-backed work queue), control-plane audio endpoints
+  with presigned playback URLs, UI audio panel (per-step step slider, player, waveform,
+  spectrogram, output-vs-reference). *Exit met:* `examples/train_demo.py` uploads per-step samples;
+  identical content uploads zero bytes (verified: reference logged 8× stored once); derivations
+  render; all presigned URLs serve. (Transcode-to-Opus rendition + a Go media gateway with
+  range/HLS/CDN deferred to Phase 4/5; playback currently uses presigned GETs to the original WAV.)
 - [ ] **Phase 3 — Audio UX depth:** per-step timeline scrubbing, A/B synced compare + blind-test
   mode, `log_dataset` + dataset versioning/manifests + dataset view.
 - [ ] **Phase 4 — Multi-tenancy hardening:** orgs/RBAC/SSO, API tokens, per-tenant isolation,
@@ -265,3 +273,13 @@ run.finish()
   points/sec accepted, 270k landed, load-shed (503) verified when the ingest buffer saturates. All
   unit suites green (Python + Go). NOTE: ClickHouse metric columns are typed `UUID`, so ingest
   requires valid UUID run/project/org ids (the SDK gets these from the control API).
+- **2026-06-05:** Phase 2 (audio first-class) landed and verified end-to-end against the live stack:
+  `log_audio` does dedup-check → direct-to-store presigned PUT → register; the derivation worker
+  (DB-backed work queue) produced waveform peaks + spectrogram + probes (duration/channels/sr/
+  peak_dbfs); the audio panel renders player + waveform + spectrogram + output-vs-reference.
+  Verified dedup (reference logged 8× across runs → stored once; explicit prepare returns
+  `exists:true`/no-URL), 9 assets all derived, and all presigned URLs serve (wav/json/png, HTTP
+  200). DECISIONS: audio coordination runs on the control plane (§4); derivation uses a Postgres
+  work queue (`assets.derived_at IS NULL` + `FOR UPDATE SKIP LOCKED`) instead of Redpanda for now;
+  Opus rendition + Go media gateway (range/HLS/CDN) deferred to Phase 4/5 (playback uses presigned
+  GETs to the original WAV). All unit suites green; web typechecks + builds.

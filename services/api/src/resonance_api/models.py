@@ -45,3 +45,47 @@ class MetricSeries(BaseModel):
     run_id: str
     metric: str
     points: list[dict]  # [{step, value}]
+
+
+# --- audio (first-class) ---
+class AssetPrepareRequest(BaseModel):
+    sha256: str
+    media_type: str = "audio/wav"
+    size_bytes: int = 0
+
+
+class AssetPrepareResponse(BaseModel):
+    exists: bool             # true => content already stored, skip upload (dedup)
+    storage_key: str
+    upload_url: str | None = None  # presigned PUT when exists is False
+
+
+class AudioLogCreate(BaseModel):
+    run_id: str
+    key: str                 # logical key, e.g. "samples/val"
+    asset_sha: str
+    step: int | None = None
+    reference_sha: str | None = None
+    caption: str | None = None
+    media_type: str = "audio/wav"
+    size_bytes: int = 0
+    sample_rate: int | None = None
+    channels: int | None = None
+    duration_s: float | None = None
+
+
+class AudioLogEntry(BaseModel):
+    id: str
+    key: str
+    step: int | None
+    caption: str | None
+    asset_sha: str
+    reference_sha: str | None
+    sample_rate: int | None = None
+    duration_s: float | None = None
+    derived: bool = False
+    # presigned URLs resolved at read time
+    audio_url: str | None = None
+    reference_url: str | None = None
+    peaks_url: str | None = None
+    spectrogram_url: str | None = None

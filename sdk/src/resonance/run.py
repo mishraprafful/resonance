@@ -76,8 +76,10 @@ class Run:
         payload = _encode_audio(audio, sample_rate)
         sha = hashlib.sha256(payload).hexdigest()
         ref_sha = None
+        ref_payload = None
         if reference is not None:
-            ref_sha = hashlib.sha256(_encode_audio(reference, sample_rate)).hexdigest()
+            ref_payload = _encode_audio(reference, sample_rate)
+            ref_sha = hashlib.sha256(ref_payload).hexdigest()
         self._q.put(
             {
                 "event": "audio",
@@ -88,6 +90,7 @@ class Run:
                 "caption": caption,
                 "sample_rate": sample_rate,
                 "_bytes": payload,
+                "_ref_bytes": ref_payload,
             }
         )
 
@@ -135,7 +138,9 @@ class Run:
                         flush_metrics()
                 else:
                     flush_metrics()
-                    if item["event"] == "run_finish":
+                    if item["event"] == "audio" and self.settings.mode == "online":
+                        self._upload_audio(item)
+                    elif item["event"] == "run_finish":
                         self._finish_remote_run(item["state"])
                 self._record(item)
             except Exception as exc:  # never let a logging error kill training
@@ -181,6 +186,49 @@ class Run:
         except Exception as exc:
             self._record({"event": "error", "detail": f"send_metrics: {exc!r}"})
 
+    def _upload_audio(self, item: dict) -> None:
+        """Content-addressed upload: dedup check -> direct PUT only when new -> register.
+
+        Identical content (same sha) uploads zero bytes on repeat — large dataset references and
+        re-logged samples are free.
+        """
+        media_type = "audio/wav"
+
+        def put_if_new(sha: str, payload: bytes) -> None:
+            resp = self._http().post(
+                f"{self.settings.api_url}/v1/assets/prepare",
+                json={"sha256": sha, "media_type": media_type, "size_bytes": len(payload)},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if not data["exists"] and data.get("upload_url"):
+                put = self._http().put(
+                    data["upload_url"], content=payload, headers={"Content-Type": media_type}
+                )
+                put.raise_for_status()
+
+        try:
+            put_if_new(item["sha256"], item["_bytes"])
+            if item.get("reference_sha") and item.get("_ref_bytes") is not None:
+                put_if_new(item["reference_sha"], item["_ref_bytes"])
+            reg = self._http().post(
+                f"{self.settings.api_url}/v1/audio",
+                json={
+                    "run_id": self.id,
+                    "key": item["key"],
+                    "asset_sha": item["sha256"],
+                    "step": item.get("step"),
+                    "reference_sha": item.get("reference_sha"),
+                    "caption": item.get("caption"),
+                    "media_type": media_type,
+                    "size_bytes": len(item["_bytes"]),
+                    "sample_rate": item.get("sample_rate"),
+                },
+            )
+            reg.raise_for_status()
+        except Exception as exc:
+            self._record({"event": "error", "detail": f"upload_audio: {exc!r}"})
+
     def _finish_remote_run(self, state: str) -> None:
         if self.settings.mode != "online":
             return
@@ -193,7 +241,7 @@ class Run:
 
     # --- spool (offline + crash-safe buffer) ---
     def _record(self, item: dict) -> None:
-        item = {k: v for k, v in item.items() if k != "_bytes"}
+        item = {k: v for k, v in item.items() if not k.startswith("_")}
         with (self._spool / "events.jsonl").open("a") as f:
             f.write(json.dumps(item) + "\n")
 
