@@ -193,6 +193,54 @@ run.finish()
 
 ---
 
+## 7b. Long-form audio at scale (≥3 min clips × 1000s of clips) — requirements
+
+**Requirement (recorded 2026-06-05):** generated/logged audio is **full-length, ≥3 minutes**, and a
+project must comfortably hold **1000s of such clips** and support **A/B comparison across them**.
+
+### Sizing assumptions
+- One 3-min clip ≈ **16 MB** (mono 22.05 kHz float WAV) to **~30 MB** (stereo 44.1 kHz 16-bit).
+- Cardinality: **1000s–100k clips** per project (many runs × per-step samples + references).
+- Storage: 10k clips ≈ **0.3–0.5 TB**; 100k ≈ **multi-TB**; platform-wide **PB** (per the §2 target).
+
+### What the current design already handles (no re-architecture needed)
+- Object storage is effectively unbounded and bytes **never transit the API** (presigned direct
+  upload + presigned playback) — clip length doesn't stress the control/ingest planes.
+- **Content-addressed dedup** collapses re-logged references/datasets to one copy — at this
+  cardinality (the same val set / reference logged across thousands of runs) this is the dominant
+  storage saving.
+- Metrics (ClickHouse) and metadata (Postgres) are independent of clip length.
+
+### What this target makes REQUIRED (and reprioritizes from "later" to "core")
+1. **Streaming playback, not full-file download.** Downloading a 16–30 MB WAV to start playback — or
+   to A/B many clips — is untenable. → A compressed **streamable rendition (Opus/AAC)** + **HTTP
+   range requests / HLS** served by the Go **media gateway** behind a **CDN**; originals stay
+   lossless in cold tiers. *Promoted into Phase 3* (at least range-streaming of the rendition); the
+   current "presigned GET of the whole WAV" is only acceptable for short clips.
+2. **Multi-resolution derivations.** One 1000-bucket peaks file / 800-column spectrogram is too
+   coarse to zoom into 3 min. → **mip-leveled waveform peaks** and **tiled spectrograms**; the UI
+   fetches only the visible resolution/region.
+3. **Resumable multipart upload** for large blobs (multipart presigned URLs + client retry) instead
+   of a single PUT.
+4. **Paginated listings + lazy presigning.** Never presign 1000s of URLs in one response —
+   paginate `GET /runs/{id}/audio` and presign **on demand** (per item opened / per comparison
+   slot), caching presigned URLs in Redis with a TTL.
+5. **Comparison view streams on demand.** Synced A/B across many clips loads only what's on screen,
+   uses range streaming of the rendition, and lazy-loads waveforms/spectrograms.
+6. **Derivation throughput.** STFT + transcode of 3-min clips is CPU-heavy; 1000s of clips ⇒
+   **horizontally scaled workers autoscaled on queue depth**. This is where the durable **Redpanda**
+   queue earns its place over the current Postgres poll-queue, and where the **ffmpeg transcode**
+   step lands.
+7. **Storage lifecycle + CDN.** Hot (recent/active runs) on standard + CDN; tier originals to
+   infrequent-access/archive by run age & access recency. Dedup + tiering are the cost levers.
+
+**Net:** the three-plane + CAS architecture does **not** fundamentally change. This target
+**reprioritizes** streaming (rendition + range/HLS + CDN), multi-resolution derivations, multipart
+upload, and pagination/lazy-presign from "later" into the core path, and strengthens the case for
+Redpanda-backed, autoscaled derivation workers.
+
+---
+
 ## 8. Tech stack
 
 - **SDK:** Python (asyncio / background-thread batching). Optional Rust core later.
@@ -230,8 +278,11 @@ run.finish()
   identical content uploads zero bytes (verified: reference logged 8× stored once); derivations
   render; all presigned URLs serve. (Transcode-to-Opus rendition + a Go media gateway with
   range/HLS/CDN deferred to Phase 4/5; playback currently uses presigned GETs to the original WAV.)
-- [ ] **Phase 3 — Audio UX depth:** per-step timeline scrubbing, A/B synced compare + blind-test
-  mode, `log_dataset` + dataset versioning/manifests + dataset view.
+- [ ] **Phase 3 — Audio UX depth + long-clip streaming (see §7b):** per-step timeline scrubbing,
+  A/B synced compare + blind-test mode, `log_dataset` + dataset versioning/manifests + dataset view.
+  **Plus, required for ≥3-min clips at scale:** Opus/AAC streamable rendition + HTTP range/HLS via
+  the media gateway, multi-resolution waveform peaks + tiled spectrograms, resumable multipart
+  upload, and paginated `runs/{id}/audio` with lazy/on-demand presigned URLs.
 - [ ] **Phase 4 — Multi-tenancy hardening:** orgs/RBAC/SSO, API tokens, per-tenant isolation,
   quotas, rate limits, tiered lifecycle + CDN.
 - [ ] **Phase 5 — Scale & ops:** ClickHouse sharding, autoscaling, retention/lifecycle automation,
@@ -283,3 +334,10 @@ run.finish()
   work queue (`assets.derived_at IS NULL` + `FOR UPDATE SKIP LOCKED`) instead of Redpanda for now;
   Opus rendition + Go media gateway (range/HLS/CDN) deferred to Phase 4/5 (playback uses presigned
   GETs to the original WAV). All unit suites green; web typechecks + builds.
+- **2026-06-05:** Recorded the long-form-audio scale requirement (§7b): clips are **≥3 min** and a
+  project must hold **1000s** of them with A/B comparison. Conclusion: no fundamental
+  re-architecture (object storage + CAS dedup + tiering already scale), but streaming (Opus
+  rendition + range/HLS + CDN), multi-resolution derivations, multipart upload, and
+  pagination/lazy-presign are **promoted into Phase 3**, and derivation moves to Redpanda-backed
+  autoscaled workers. Demo (`examples/train_demo.py`) now logs 3-min clips by default
+  (`DEMO_AUDIO_SECONDS`, `DEMO_SAMPLES`).

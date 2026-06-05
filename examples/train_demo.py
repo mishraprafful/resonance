@@ -10,6 +10,7 @@ Offline (default) spools to ./.resonance. Online streams to a running stack:
 from __future__ import annotations
 
 import math
+import os
 import random
 import time
 
@@ -18,11 +19,17 @@ import numpy as np
 import resonance
 
 SR = 22050
+# Long-form clips by default (≥3 min) to exercise the real target: full-length audio at scale.
+AUDIO_SECONDS = float(os.environ.get("DEMO_AUDIO_SECONDS", "180"))
+# How many audio samples to log over the run (each is its own ~3-min clip).
+N_SAMPLES = int(os.environ.get("DEMO_SAMPLES", "4"))
 
 
-def _tone(freq: float, seconds: float = 1.0, noise: float = 0.0) -> np.ndarray:
+def _tone(freq: float, seconds: float = AUDIO_SECONDS, noise: float = 0.0) -> np.ndarray:
+    # Slowly drifting pitch so a 3-min spectrogram actually shows structure.
     t = np.linspace(0, seconds, int(SR * seconds), endpoint=False)
-    sig = 0.3 * np.sin(2 * np.pi * freq * t)
+    drift = freq + 20.0 * np.sin(2 * np.pi * 0.01 * t)
+    sig = 0.3 * np.sin(2 * np.pi * drift * t)
     if noise:
         sig = sig + noise * np.random.randn(len(t))
     return sig.astype(np.float32)
@@ -30,17 +37,21 @@ def _tone(freq: float, seconds: float = 1.0, noise: float = 0.0) -> np.ndarray:
 
 def main() -> None:
     run = resonance.init(project="vocoder-demo", config={"lr": 3e-4, "model": "hifigan"})
-    print(f"run id: {run.id}  (mode={run.settings.mode})")
+    mb = SR * AUDIO_SECONDS * 2 / 1e6  # ~16-bit PCM WAV size estimate
+    print(f"run id: {run.id}  (mode={run.settings.mode}); "
+          f"{N_SAMPLES} clips of {AUDIO_SECONDS:.0f}s (~{mb:.0f} MB each)")
 
     reference = _tone(440.0)  # the "ground truth" target, for A/B
-    for step in range(200):
+    steps = 200
+    log_at = {int(i * steps / N_SAMPLES) for i in range(N_SAMPLES)}
+    for step in range(steps):
         mel = 1.0 / (1 + step * 0.02) + random.uniform(-0.02, 0.02)
         adv = 0.5 + 0.4 * math.sin(step / 15) + random.uniform(-0.03, 0.03)
         run.log({"loss/mel": mel, "loss/adv": adv}, step=step)
-        if step % 50 == 0:
+        if step in log_at:
             # Generated sample converges toward 440 Hz with shrinking noise as training proceeds —
             # uploaded (content-addressed), then a worker derives waveform + spectrogram.
-            sample = _tone(440.0 + (200 - step), noise=0.3 * (1 - step / 200))
+            sample = _tone(440.0 + (steps - step), noise=0.3 * (1 - step / steps))
             run.log_audio(
                 "samples/val", sample, sample_rate=SR, step=step,
                 reference=reference, caption=f"step {step}",
