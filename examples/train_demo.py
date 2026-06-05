@@ -58,6 +58,20 @@ def main() -> None:
             )
         time.sleep(0.01)
 
+    # Register a small content-addressed dataset version (deduped on upload).
+    try:
+        import tempfile
+
+        import soundfile as sf
+
+        d = tempfile.mkdtemp(prefix="resonance-dataset-")
+        for i, f in enumerate([330.0, 440.0, 550.0]):
+            sf.write(f"{d}/clip_{i}.wav", _tone(f, seconds=2.0), SR)
+        run.log_dataset("valset", d)
+        print(f"logged dataset 'valset' (3 clips) from {d}")
+    except Exception as exc:  # soundfile optional
+        print(f"dataset step skipped: {exc!r}")
+
     run.finish()
     print("done")
 

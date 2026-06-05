@@ -18,12 +18,20 @@ from .models import (
     AssetPrepareResponse,
     AudioLogCreate,
     AudioLogEntry,
+    AudioPage,
+    Dataset,
+    DatasetCreate,
+    DatasetDetail,
     MetricSeries,
+    PresignResponse,
     Project,
+    Rating,
+    RatingCreate,
     Run,
     RunCreate,
     RunUpdate,
 )
+from .settings import settings
 
 app = FastAPI(title="Resonance API", version="0.1.0")
 
@@ -36,6 +44,21 @@ class Health(BaseModel):
 @app.get("/healthz", response_model=Health)
 def healthz() -> Health:
     return Health()
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    # Idempotent dev migration so a running stack (which won't re-run init.sql) has new tables.
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS ratings ("
+            " id UUID PRIMARY KEY DEFAULT gen_random_uuid(),"
+            " org_id UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,"
+            " test_id TEXT NOT NULL, asset_sha TEXT NOT NULL, run_id UUID, label TEXT,"
+            " score INT NOT NULL, blind BOOLEAN NOT NULL DEFAULT FALSE,"
+            " created_at TIMESTAMPTZ NOT NULL DEFAULT now())"
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS ratings_test_idx ON ratings (org_id, test_id)")
 
 
 @app.on_event("shutdown")
@@ -186,41 +209,178 @@ def log_audio(body: AudioLogCreate, org_id: str = Depends(resolve_org)) -> Audio
     )
 
 
-@app.get("/v1/runs/{run_id}/audio", response_model=list[AudioLogEntry])
-def list_audio(run_id: str, org_id: str = Depends(resolve_org)) -> list[AudioLogEntry]:
-    """List a run's audio logs with presigned URLs for the audio, reference, and derivations."""
+@app.get("/v1/runs/{run_id}/audio/keys")
+def list_audio_keys(run_id: str, org_id: str = Depends(resolve_org)) -> dict:
+    """Distinct audio keys for a run (so the UI can browse per key without scanning everything)."""
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT key FROM audio_logs WHERE org_id = %s AND run_id = %s ORDER BY key",
+            (org_id, run_id),
+        )
+        return {"run_id": run_id, "keys": [r["key"] for r in cur.fetchall()]}
+
+
+@app.get("/v1/runs/{run_id}/audio", response_model=AudioPage)
+def list_audio(
+    run_id: str,
+    key: str | None = None,
+    limit: int | None = None,
+    cursor: str | None = None,
+    org_id: str = Depends(resolve_org),
+) -> AudioPage:
+    """Paginated audio logs (keyset on step,id). No presigned URLs — the UI mints those lazily via
+    /v1/assets/{sha}/url, so listing 1000s of clips never signs thousands of URLs up front."""
+    limit = max(1, min(limit or settings.audio_page_size, 500))
+    where = ["al.org_id = %s", "al.run_id = %s"]
+    params: list = [org_id, run_id]
+    if key is not None:
+        where.append("al.key = %s")
+        params.append(key)
+    if cursor:  # keyset: cursor = "<step>|<id>"
+        c_step, c_id = cursor.split("|", 1)
+        where.append("(al.step, al.id) > (%s, %s)")
+        params += [int(c_step), c_id]
+    params.append(limit + 1)  # fetch one extra to detect a next page
+
     with db.connection() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT al.id, al.key, al.step, al.caption, al.asset_sha, al.reference_sha, "
             "       a.sample_rate, a.duration_s, a.derived_at, a.derivations "
             "FROM audio_logs al "
             "LEFT JOIN assets a ON a.org_id = al.org_id AND a.sha256 = al.asset_sha "
-            "WHERE al.org_id = %s AND al.run_id = %s ORDER BY al.key, al.step",
-            (org_id, run_id),
+            f"WHERE {' AND '.join(where)} ORDER BY al.step, al.id LIMIT %s",
+            params,
         )
         rows = cur.fetchall()
-    out: list[AudioLogEntry] = []
+
+    next_cursor = None
+    if len(rows) > limit:
+        last = rows[limit - 1]
+        next_cursor = f"{last['step']}|{last['id']}"
+        rows = rows[:limit]
+    items = []
     for r in rows:
         deriv = r.get("derivations") or {}
-        out.append(
+        items.append(
             AudioLogEntry(
                 id=str(r["id"]), key=r["key"], step=r["step"], caption=r["caption"],
                 asset_sha=r["asset_sha"], reference_sha=r["reference_sha"],
                 sample_rate=r["sample_rate"], duration_s=r["duration_s"],
                 derived=r["derived_at"] is not None,
-                audio_url=storage.presign_get(storage.blob_key(org_id, r["asset_sha"])),
-                reference_url=(
-                    storage.presign_get(storage.blob_key(org_id, r["reference_sha"]))
-                    if r["reference_sha"] else None
-                ),
-                peaks_url=storage.presign_get(deriv["peaks_key"]) if deriv.get("peaks_key") else None,
-                spectrogram_url=(
-                    storage.presign_get(deriv["spectrogram_key"])
-                    if deriv.get("spectrogram_key") else None
-                ),
+                has_peaks=bool(deriv.get("peaks_key")),
+                has_spectrogram=bool(deriv.get("spectrogram_key")),
             )
         )
-    return out
+    return AudioPage(items=items, next_cursor=next_cursor)
+
+
+@app.get("/v1/assets/{sha}/url", response_model=PresignResponse)
+def presign_asset(
+    sha: str, kind: str = "original", org_id: str = Depends(resolve_org)
+) -> PresignResponse:
+    """Mint a (Redis-cached) presigned GET URL on demand. `original` always serves the exact
+    uploaded bytes — comparison plays original quality, never a lossy rendition."""
+    if kind == "original":
+        key = storage.blob_key(org_id, sha)
+    elif kind in ("peaks", "spectrogram"):
+        with db.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT derivations FROM assets WHERE org_id = %s AND sha256 = %s", (org_id, sha)
+            )
+            row = cur.fetchone()
+        deriv = (row or {}).get("derivations") or {}
+        key = deriv.get(f"{kind}_key")
+        if not key:
+            raise HTTPException(status_code=404, detail=f"{kind} not available for asset")
+    else:
+        raise HTTPException(status_code=400, detail="kind must be original|peaks|spectrogram")
+    return PresignResponse(sha256=sha, kind=kind, url=storage.presign_get(key))
+
+
+# --- listening-test ratings (A/B compare) ---
+@app.post("/v1/ratings", response_model=Rating)
+def create_rating(body: RatingCreate, org_id: str = Depends(resolve_org)) -> Rating:
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO ratings (org_id, test_id, asset_sha, run_id, label, score, blind) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+            (org_id, body.test_id, body.asset_sha, body.run_id, body.label, body.score, body.blind),
+        )
+        return Rating(**_rating_row(cur.fetchone()))
+
+
+@app.get("/v1/ratings", response_model=list[Rating])
+def list_ratings(test_id: str, org_id: str = Depends(resolve_org)) -> list[Rating]:
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM ratings WHERE org_id = %s AND test_id = %s ORDER BY created_at",
+            (org_id, test_id),
+        )
+        return [Rating(**_rating_row(r)) for r in cur.fetchall()]
+
+
+# --- dataset versioning ---
+@app.post("/v1/datasets", response_model=Dataset)
+def create_dataset(body: DatasetCreate, org_id: str = Depends(resolve_org)) -> Dataset:
+    """Register a content-addressed dataset version (idempotent on org+name+version)."""
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO dataset_versions (org_id, project_id, name, version, manifest) "
+            "VALUES (%s,%s,%s,%s,%s) ON CONFLICT (org_id, name, version) DO NOTHING",
+            (org_id, body.project_id, body.name, body.version, json.dumps(body.manifest)),
+        )
+        cur.execute(
+            "SELECT id, name, version, project_id, created_at, "
+            "       jsonb_array_length(manifest) AS item_count "
+            "FROM dataset_versions WHERE org_id = %s AND name = %s AND version = %s",
+            (org_id, body.name, body.version),
+        )
+        return Dataset(**_dataset_row(cur.fetchone()))
+
+
+@app.get("/v1/datasets", response_model=list[Dataset])
+def list_datasets(org_id: str = Depends(resolve_org)) -> list[Dataset]:
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, name, version, project_id, created_at, "
+            "       jsonb_array_length(manifest) AS item_count "
+            "FROM dataset_versions WHERE org_id = %s ORDER BY created_at DESC",
+            (org_id,),
+        )
+        return [Dataset(**_dataset_row(r)) for r in cur.fetchall()]
+
+
+@app.get("/v1/datasets/{dataset_id}", response_model=DatasetDetail)
+def get_dataset(dataset_id: str, org_id: str = Depends(resolve_org)) -> DatasetDetail:
+    with db.connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, name, version, project_id, created_at, manifest, "
+            "       jsonb_array_length(manifest) AS item_count "
+            "FROM dataset_versions WHERE org_id = %s AND id = %s",
+            (org_id, dataset_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="dataset not found")
+        data = _dataset_row(row)
+        data["items"] = row["manifest"] or []
+        return DatasetDetail(**data)
+
+
+def _dataset_row(r: dict) -> dict:
+    return {
+        "id": str(r["id"]), "name": r["name"], "version": r["version"],
+        "project_id": str(r["project_id"]) if r["project_id"] else None,
+        "item_count": r["item_count"] or 0, "created_at": r["created_at"],
+    }
+
+
+def _rating_row(r: dict) -> dict:
+    return {
+        "id": str(r["id"]), "test_id": r["test_id"], "asset_sha": r["asset_sha"],
+        "run_id": str(r["run_id"]) if r["run_id"] else None,
+        "label": r["label"], "score": r["score"], "blind": r["blind"],
+    }
 
 
 def _stringify_ids(row: dict) -> dict:

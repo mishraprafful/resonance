@@ -211,12 +211,20 @@ project must comfortably hold **1000s of such clips** and support **A/B comparis
   storage saving.
 - Metrics (ClickHouse) and metadata (Postgres) are independent of clip length.
 
+### Hard constraint: comparison uses ORIGINAL quality
+A/B comparison exists to judge **audio quality**, so the compare path must serve the **exact
+uploaded bytes** (lossless, content-addressed original). A lossy rendition (Opus/AAC) would destroy
+the very artifacts being compared and is therefore **never** the comparison source. Renditions, if
+added, are a **preview/browse** optimization only (e.g. quick scrubbing in long lists) and must be
+clearly labelled as not-for-quality-judgement. Originals are range-streamed and lazy-loaded.
+
 ### What this target makes REQUIRED (and reprioritizes from "later" to "core")
-1. **Streaming playback, not full-file download.** Downloading a 16–30 MB WAV to start playback — or
-   to A/B many clips — is untenable. → A compressed **streamable rendition (Opus/AAC)** + **HTTP
-   range requests / HLS** served by the Go **media gateway** behind a **CDN**; originals stay
-   lossless in cold tiers. *Promoted into Phase 3* (at least range-streaming of the rendition); the
-   current "presigned GET of the whole WAV" is only acceptable for short clips.
+1. **Stream originals efficiently (no lossy rendition on the compare path).** A 3-min original is
+   8–30 MB; we make playback usable via **HTTP range requests** (browsers issue them natively
+   against presigned object-store URLs — MinIO/S3 support range) plus **lazy loading** (only fetch
+   clips actually opened/compared). The Go **media gateway + CDN** add auth-scoped streaming and
+   edge caching later (Phase 4/5). An optional compressed rendition may be added purely for fast
+   *browsing* of long lists — but per the constraint above, comparison always plays the original.
 2. **Multi-resolution derivations.** One 1000-bucket peaks file / 800-column spectrogram is too
    coarse to zoom into 3 min. → **mip-leveled waveform peaks** and **tiled spectrograms**; the UI
    fetches only the visible resolution/region.
@@ -278,11 +286,14 @@ Redpanda-backed, autoscaled derivation workers.
   identical content uploads zero bytes (verified: reference logged 8× stored once); derivations
   render; all presigned URLs serve. (Transcode-to-Opus rendition + a Go media gateway with
   range/HLS/CDN deferred to Phase 4/5; playback currently uses presigned GETs to the original WAV.)
-- [ ] **Phase 3 — Audio UX depth + long-clip streaming (see §7b):** per-step timeline scrubbing,
-  A/B synced compare + blind-test mode, `log_dataset` + dataset versioning/manifests + dataset view.
-  **Plus, required for ≥3-min clips at scale:** Opus/AAC streamable rendition + HTTP range/HLS via
-  the media gateway, multi-resolution waveform peaks + tiled spectrograms, resumable multipart
-  upload, and paginated `runs/{id}/audio` with lazy/on-demand presigned URLs.
+- [x] **Phase 3 — Audio UX depth + long-clip scale (see §7b):** A/B synced compare + blind-test
+  mode (plays **original quality** only, ratings logged via `/v1/ratings`), paginated
+  `runs/{id}/audio` (keyset cursor) with **lazy/on-demand, Redis-cached presigned URLs**
+  (`/v1/assets/{sha}/url`, originals range-streamed), `log_dataset` + content-addressed dataset
+  versioning/manifests + dataset view. *Exit met:* paginated lazy-presigned listings verified;
+  compare/datasets UIs build; dataset dedup verified (same content → one version); ratings
+  round-trip. *Deferred within Phase 3+:* multi-resolution peaks/tiled spectrograms, resumable
+  multipart upload, optional browse-only rendition, Go media gateway + CDN.
 - [ ] **Phase 4 — Multi-tenancy hardening:** orgs/RBAC/SSO, API tokens, per-tenant isolation,
   quotas, rate limits, tiered lifecycle + CDN.
 - [ ] **Phase 5 — Scale & ops:** ClickHouse sharding, autoscaling, retention/lifecycle automation,
@@ -341,3 +352,12 @@ Redpanda-backed, autoscaled derivation workers.
   pagination/lazy-presign are **promoted into Phase 3**, and derivation moves to Redpanda-backed
   autoscaled workers. Demo (`examples/train_demo.py`) now logs 3-min clips by default
   (`DEMO_AUDIO_SECONDS`, `DEMO_SAMPLES`).
+- **2026-06-05:** Phase 3 landed + verified end-to-end. **Hard constraint recorded & honored:** A/B
+  comparison serves **original uploaded quality** (a lossy rendition would defeat quality
+  comparison) — `/v1/assets/{sha}/url?kind=original` returns the exact bytes. Added: keyset-paginated
+  `runs/{id}/audio` with **lazy, Redis-cached** presigned URLs (no signing 1000s up front); audio
+  panel rewritten to presign per selected step; **A/B synced compare + blind-test** UI (shuffle/
+  hide/reveal, ratings → `/v1/ratings`); **content-addressed dataset versioning** (`log_dataset` →
+  manifest; version id = hash of member set, so identical datasets collapse to one version) + dataset
+  browser. Verified: pagination (`next_cursor`), Redis presign cache hit, dataset dedup (one
+  version), ratings round-trip. All suites green; web builds.

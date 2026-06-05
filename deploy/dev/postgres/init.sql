@@ -94,6 +94,20 @@ CREATE TABLE IF NOT EXISTS dataset_versions (
     UNIQUE (org_id, name, version)
 );
 
+-- Blind/sighted listening-test ratings, logged back from the A/B compare view.
+CREATE TABLE IF NOT EXISTS ratings (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id      UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    test_id     TEXT NOT NULL,           -- groups one comparison session
+    asset_sha   TEXT NOT NULL,
+    run_id      UUID,
+    label       TEXT,                    -- human label of the track (run/step), for results
+    score       INT NOT NULL,            -- e.g. 1..5
+    blind       BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ratings_test_idx ON ratings (org_id, test_id);
+
 -- Seed a dev org so the SDK can talk to a real tenant out of the box.
 INSERT INTO orgs (slug, name) VALUES ('dev', 'Dev Org')
     ON CONFLICT (slug) DO NOTHING;

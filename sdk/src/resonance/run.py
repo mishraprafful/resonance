@@ -94,9 +94,15 @@ class Run:
             }
         )
 
-    def log_dataset(self, name: str, manifest: list[dict] | str) -> None:
-        """Register a content-addressed dataset version (manifest of asset refs)."""
-        self._q.put({"event": "dataset", "name": name, "manifest": manifest})
+    def log_dataset(self, name: str, source: str | list) -> None:
+        """Register a content-addressed dataset version.
+
+        `source` may be a directory path, a list of file paths, or a prebuilt manifest
+        (list of {"path": ..., optionally "sha256": ...}). Items are deduped on upload, and the
+        version id is the content hash of the member set — identical datasets collapse to one
+        version regardless of how many runs log them.
+        """
+        self._q.put({"event": "dataset", "name": name, "source": source})
 
     def finish(self, state: str = "finished") -> None:
         self._q.put({"event": "run_finish", "state": state})
@@ -140,6 +146,8 @@ class Run:
                     flush_metrics()
                     if item["event"] == "audio" and self.settings.mode == "online":
                         self._upload_audio(item)
+                    elif item["event"] == "dataset" and self.settings.mode == "online":
+                        self._upload_dataset(item)
                     elif item["event"] == "run_finish":
                         self._finish_remote_run(item["state"])
                 self._record(item)
@@ -186,31 +194,27 @@ class Run:
         except Exception as exc:
             self._record({"event": "error", "detail": f"send_metrics: {exc!r}"})
 
-    def _upload_audio(self, item: dict) -> None:
-        """Content-addressed upload: dedup check -> direct PUT only when new -> register.
-
-        Identical content (same sha) uploads zero bytes on repeat — large dataset references and
-        re-logged samples are free.
-        """
-        media_type = "audio/wav"
-
-        def put_if_new(sha: str, payload: bytes) -> None:
-            resp = self._http().post(
-                f"{self.settings.api_url}/v1/assets/prepare",
-                json={"sha256": sha, "media_type": media_type, "size_bytes": len(payload)},
+    def _put_if_new(self, sha: str, payload: bytes, media_type: str) -> None:
+        """Dedup check then direct-to-store PUT only when content is new (zero bytes on repeat)."""
+        resp = self._http().post(
+            f"{self.settings.api_url}/v1/assets/prepare",
+            json={"sha256": sha, "media_type": media_type, "size_bytes": len(payload)},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if not data["exists"] and data.get("upload_url"):
+            put = self._http().put(
+                data["upload_url"], content=payload, headers={"Content-Type": media_type}
             )
-            resp.raise_for_status()
-            data = resp.json()
-            if not data["exists"] and data.get("upload_url"):
-                put = self._http().put(
-                    data["upload_url"], content=payload, headers={"Content-Type": media_type}
-                )
-                put.raise_for_status()
+            put.raise_for_status()
 
+    def _upload_audio(self, item: dict) -> None:
+        """Content-addressed upload of a logged audio sample (+ optional reference), then register."""
+        media_type = "audio/wav"
         try:
-            put_if_new(item["sha256"], item["_bytes"])
+            self._put_if_new(item["sha256"], item["_bytes"], media_type)
             if item.get("reference_sha") and item.get("_ref_bytes") is not None:
-                put_if_new(item["reference_sha"], item["_ref_bytes"])
+                self._put_if_new(item["reference_sha"], item["_ref_bytes"], media_type)
             reg = self._http().post(
                 f"{self.settings.api_url}/v1/audio",
                 json={
@@ -229,6 +233,33 @@ class Run:
         except Exception as exc:
             self._record({"event": "error", "detail": f"upload_audio: {exc!r}"})
 
+    def _upload_dataset(self, item: dict) -> None:
+        """Upload each dataset member (content-addressed, deduped) and register the version."""
+        try:
+            paths = _expand_dataset_source(item["source"])
+            manifest = []
+            for path in paths:
+                payload = Path(path).read_bytes()
+                sha = hashlib.sha256(payload).hexdigest()
+                self._put_if_new(sha, payload, "audio/wav")
+                manifest.append({"sha256": sha, "path": str(path), "size_bytes": len(payload)})
+            # Content-addressed version: identical member sets -> identical version id.
+            version = hashlib.sha256(
+                "".join(sorted(m["sha256"] for m in manifest)).encode()
+            ).hexdigest()[:12]
+            reg = self._http().post(
+                f"{self.settings.api_url}/v1/datasets",
+                json={
+                    "name": item["name"],
+                    "version": version,
+                    "project_id": self.project_id,
+                    "manifest": manifest,
+                },
+            )
+            reg.raise_for_status()
+        except Exception as exc:
+            self._record({"event": "error", "detail": f"upload_dataset: {exc!r}"})
+
     def _finish_remote_run(self, state: str) -> None:
         if self.settings.mode != "online":
             return
@@ -244,6 +275,24 @@ class Run:
         item = {k: v for k, v in item.items() if not k.startswith("_")}
         with (self._spool / "events.jsonl").open("a") as f:
             f.write(json.dumps(item) + "\n")
+
+
+def _expand_dataset_source(source: str | list) -> list[str]:
+    """Resolve a dataset source to a list of file paths.
+
+    Accepts a directory (recursively globbed for audio files), a list of file paths, or a manifest
+    (list of dicts carrying a 'path').
+    """
+    if isinstance(source, (str, Path)):
+        root = Path(source)
+        if root.is_dir():
+            exts = {".wav", ".flac", ".ogg", ".mp3", ".opus"}
+            return [str(p) for p in sorted(root.rglob("*")) if p.suffix.lower() in exts]
+        return [str(root)]
+    paths = []
+    for item in source:
+        paths.append(item["path"] if isinstance(item, dict) else str(item))
+    return paths
 
 
 def _encode_audio(audio: Any, sample_rate: int) -> bytes:

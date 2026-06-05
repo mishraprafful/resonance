@@ -26,5 +26,9 @@ class Settings:
     s3_bucket: str = os.environ.get("S3_BUCKET", "resonance-blobs")
     presign_ttl_s: int = int(os.environ.get("RESONANCE_PRESIGN_TTL", "3600"))
 
+    # Cache (presigned-URL cache so we don't re-sign on every page render).
+    redis_url: str = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+    audio_page_size: int = int(os.environ.get("RESONANCE_AUDIO_PAGE_SIZE", "50"))
+
 
 settings = Settings()

@@ -37,3 +37,17 @@ def test_log_audio_is_content_addressed(tmp_path: Path):
     audio = next(e for e in events if e["event"] == "audio")
     assert len(audio["sha256"]) == 64  # sha256 hex digest
     assert "_bytes" not in audio       # raw bytes stripped before spooling
+
+
+def test_expand_dataset_source_dir_and_list(tmp_path: Path):
+    from resonance.run import _expand_dataset_source
+
+    (tmp_path / "a.wav").write_bytes(b"a")
+    (tmp_path / "b.flac").write_bytes(b"b")
+    (tmp_path / "notes.txt").write_text("ignore me")
+    # directory -> only audio files, sorted
+    got = _expand_dataset_source(str(tmp_path))
+    assert [Path(p).name for p in got] == ["a.wav", "b.flac"]
+    # explicit list of paths and manifest dicts
+    assert _expand_dataset_source(["x.wav", "y.wav"]) == ["x.wav", "y.wav"]
+    assert _expand_dataset_source([{"path": "z.wav", "sha256": "deadbeef"}]) == ["z.wav"]

@@ -9,9 +9,15 @@ from __future__ import annotations
 import functools
 
 import boto3
+import redis
 from botocore.client import Config
 
 from .settings import settings
+
+
+@functools.lru_cache(maxsize=1)
+def _redis():
+    return redis.from_url(settings.redis_url, decode_responses=True)
 
 
 @functools.lru_cache(maxsize=1)
@@ -53,8 +59,24 @@ def presign_put(key: str, content_type: str) -> str:
 
 
 def presign_get(key: str) -> str:
-    return _client().generate_presigned_url(
+    """Presigned GET, cached in Redis so repeated page loads don't re-sign every object.
+
+    Cached slightly shorter than the URL's own validity so a served URL never expires mid-use.
+    """
+    cache_key = f"presign:get:{key}"
+    try:
+        cached = _redis().get(cache_key)
+        if cached:
+            return cached
+    except Exception:
+        pass  # cache is best-effort; fall through to signing
+    url = _client().generate_presigned_url(
         "get_object",
         Params={"Bucket": settings.s3_bucket, "Key": key},
         ExpiresIn=settings.presign_ttl_s,
     )
+    try:
+        _redis().set(cache_key, url, ex=max(60, settings.presign_ttl_s - 300))
+    except Exception:
+        pass
+    return url

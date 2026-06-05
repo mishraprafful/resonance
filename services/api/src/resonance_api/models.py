@@ -84,8 +84,60 @@ class AudioLogEntry(BaseModel):
     sample_rate: int | None = None
     duration_s: float | None = None
     derived: bool = False
-    # presigned URLs resolved at read time
-    audio_url: str | None = None
-    reference_url: str | None = None
-    peaks_url: str | None = None
-    spectrogram_url: str | None = None
+    # No presigned URLs here — they're minted lazily via /v1/assets/{sha}/url (Redis-cached) so a
+    # page of 1000s of clips doesn't sign thousands of URLs up front. These flags tell the UI what
+    # is available to request.
+    has_peaks: bool = False
+    has_spectrogram: bool = False
+
+
+class AudioPage(BaseModel):
+    items: list[AudioLogEntry]
+    next_cursor: str | None = None
+
+
+class PresignResponse(BaseModel):
+    sha256: str
+    kind: str          # original | peaks | spectrogram
+    url: str
+
+
+# --- listening-test ratings (A/B compare) ---
+class RatingCreate(BaseModel):
+    test_id: str
+    asset_sha: str
+    score: int
+    run_id: str | None = None
+    label: str | None = None
+    blind: bool = False
+
+
+class Rating(BaseModel):
+    id: str
+    test_id: str
+    asset_sha: str
+    run_id: str | None
+    label: str | None
+    score: int
+    blind: bool
+
+
+# --- dataset versioning ---
+class DatasetCreate(BaseModel):
+    name: str
+    version: str
+    manifest: list[dict] = Field(default_factory=list)  # [{sha256, path, size_bytes}]
+    project_id: str | None = None
+
+
+class Dataset(BaseModel):
+    id: str
+    name: str
+    version: str
+    project_id: str | None = None
+    item_count: int = 0
+    created_at: datetime
+
+
+class DatasetDetail(Dataset):
+    items: list[dict] = Field(default_factory=list)

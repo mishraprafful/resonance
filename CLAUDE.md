@@ -66,8 +66,9 @@ docs/                additional design notes
 
 ## Dev workflow
 
-- Local stack (once Phase 0 lands): `docker compose up` in `deploy/` → Postgres, ClickHouse, MinIO,
-  Redpanda, Redis. Verify health before running services.
+- **One command:** `make up` (docker stack + ingest/api/worker/web on the host) → UI on
+  http://localhost:5280; `make demo` logs a sample run; `make down` stops it. `make dev-reset` wipes
+  local data after a schema change.
 - After any change, run that component's tests and lint. For features, verify end-to-end against the
   phase exit criteria in `ARCHITECTURE.md` §10.
 - When you complete roadmap work, tick the box in `ARCHITECTURE.md` §9 and append to its status log.
@@ -82,20 +83,26 @@ publish an unmeasured number as certified. Re-certify when a hot path changes.
 
 ## Current status
 
-**Phases 1–2 complete and verified end-to-end.** Tracking (SDK → ingest → ClickHouse; control plane
-serves runs + downsampled metrics) and **audio first-class**: `log_audio` dedup→presigned PUT→
-register, CAS object store, a derivation worker (waveform peaks + spectrogram + probes), and a UI
-audio panel (step slider, player, waveform, spectrogram, output-vs-reference). Run
-`examples/train_demo.py` against `make dev-up` to reproduce. **Next:** Phase 3 — per-step timeline
-depth, cross-run A/B compare + blind-test mode, dataset versioning. See `ARCHITECTURE.md` §9.
+**Phases 1–3 complete and verified end-to-end.** Tracking (SDK → ingest → ClickHouse; control plane
+serves runs + downsampled metrics), **audio first-class** (`log_audio` dedup→presigned PUT→register,
+CAS store, derivation worker for peaks/spectrogram/probes, audio panel), and **audio UX depth**:
+keyset-paginated audio listings with **lazy Redis-cached presigned URLs**, **A/B synced compare +
+blind-test** (original quality, ratings via `/v1/ratings`), and **content-addressed dataset
+versioning** (`log_dataset` + dataset browser). Run `examples/train_demo.py` against `make up`.
+**Next:** Phase 4 — multi-tenancy hardening (orgs/RBAC/SSO, quotas, isolation, tiered lifecycle +
+CDN). See `ARCHITECTURE.md` §9.
 
 Gotchas / current deviations from the target architecture (all documented in `ARCHITECTURE.md`):
+- **A/B comparison serves ORIGINAL quality** (`/v1/assets/{sha}/url?kind=original`) — never a lossy
+  rendition; that's a hard constraint (§7b). Renditions, if added, are browse-only.
+- Audio listings are **paginated + lazily presigned** (Redis-cached); never sign 1000s of URLs up
+  front. Lazy URLs via `GET /v1/assets/{sha}/url`.
 - ClickHouse metric columns are `UUID`-typed; ingest only accepts valid UUID ids (SDK gets them from
   the control API at `init`).
 - **Audio coordination runs on the control plane** (FastAPI), not the Go ingest gateway — audio is
-  low-frequency vs metrics. `prepare`/`audio`/`runs/{id}/audio` endpoints.
+  low-frequency vs metrics. `prepare`/`audio`/`runs/{id}/audio`/`assets/{sha}/url` endpoints.
 - Derivation uses a **Postgres work queue** (`assets.derived_at IS NULL`), not Redpanda yet.
-- Playback uses **presigned GETs to the original WAV**; Opus rendition + Go media gateway
-  (range/HLS/CDN) come in Phase 4/5.
+- Long-clip playback range-streams the **original** via presigned URLs (browser-native range); Go
+  media gateway + CDN + multi-resolution derivations come in Phase 4/5.
 - Dev stack uses **bind-mounted** data dirs, so a schema change needs `rm -rf deploy/dev/.data`
   before `make dev-up` (a `down -v` is not enough) to re-run the init SQL.
