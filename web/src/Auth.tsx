@@ -18,6 +18,7 @@ function BootstrapForm({ onDone }: { onDone: () => void }) {
       {err && <p style={{ color: "crimson" }}>{err}</p>}
       <button
         style={field}
+        disabled={!u.trim() || !p}
         onClick={() => api.bootstrap(u, p).then(onDone).catch((e: ApiError) => setErr(e.message))}
       >
         Create admin & sign in
@@ -40,6 +41,10 @@ function LoginSignup({ onDone }: { onDone: () => void }) {
 
   const submit = () => {
     setErr(null);
+    if (!u.trim() || !p) {
+      setErr("Username and password are required.");
+      return;
+    }
     const action =
       tab === "login"
         ? api.login(u, p)
@@ -82,7 +87,7 @@ function LoginSignup({ onDone }: { onDone: () => void }) {
         </div>
       )}
       {err && <p style={{ color: "crimson" }}>{err}</p>}
-      <button style={field} onClick={submit}>{tab === "login" ? "Log in" : "Sign up"}</button>
+      <button style={field} disabled={!u.trim() || !p} onClick={submit}>{tab === "login" ? "Log in" : "Sign up"}</button>
     </div>
   );
 }

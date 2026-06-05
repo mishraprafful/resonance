@@ -19,6 +19,14 @@ def _slugify(s: str) -> str:
     return re.sub(r"[^a-z0-9-]+", "-", s.lower()).strip("-") or "team"
 
 
+def _require_credentials(username: str, password: str) -> None:
+    """Reject empty/whitespace usernames and empty passwords (account-creation paths)."""
+    if not username or not username.strip():
+        raise HTTPException(status_code=400, detail="username is required")
+    if not password:
+        raise HTTPException(status_code=400, detail="password must not be empty")
+
+
 def _set_cookie(resp: Response, token: str) -> None:
     resp.set_cookie(
         accounts.COOKIE_NAME, token, max_age=accounts.SESSION_TTL_S,
@@ -62,6 +70,7 @@ def bootstrap_status() -> dict:
 
 @router.post("/v1/auth/bootstrap")
 def bootstrap(body: Credentials, response: Response) -> dict:
+    _require_credentials(body.username, body.password)
     with db.connection() as c, c.cursor() as cur:
         cur.execute("SELECT count(*) AS n FROM users")
         if cur.fetchone()["n"] > 0:
@@ -87,6 +96,7 @@ def bootstrap(body: Credentials, response: Response) -> dict:
 # --- signup / login / logout ---
 @router.post("/v1/auth/signup")
 def signup(body: SignupRequest, response: Response) -> dict:
+    _require_credentials(body.username, body.password)
     with db.connection() as c, c.cursor() as cur:
         cur.execute("SELECT 1 FROM users WHERE username = %s", (body.username,))
         if cur.fetchone():
