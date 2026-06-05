@@ -82,5 +82,11 @@ publish an unmeasured number as certified. Re-certify when a hot path changes.
 
 ## Current status
 
-Greenfield. Architecture drafted (2026-06-05). No code yet. **Next:** confirm open decisions in
-`ARCHITECTURE.md`, then start Phase 0 scaffolding.
+**Phase 1 (Tracking MVP) complete and verified end-to-end.** SDK online mode → Go ingest gateway →
+ClickHouse; FastAPI control plane serves runs (Postgres) + downsampled metrics (ClickHouse); React
+UI with polling live charts. Run `examples/train_demo.py` against `make dev-up` to reproduce.
+**Next:** Phase 2 — audio first-class (CAS object store, dedup, presigned upload, audio workers,
+media gateway, UI audio panel). See the roadmap in `ARCHITECTURE.md` §9.
+
+Gotcha: ClickHouse metric columns are `UUID`-typed, so the ingest gateway only accepts valid UUID
+run/project/org ids — the SDK obtains these from the control API at `init`.

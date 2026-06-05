@@ -214,9 +214,11 @@ run.finish()
 - [x] **Phase 0 — Scaffolding:** monorepo layout, `docker-compose` dev stack (Postgres, ClickHouse,
   MinIO, Redpanda, Redis), CI, shared schema/proto definitions, this doc + root `CLAUDE.md`,
   k6 load-test harness + capacity-certification process.
-- [ ] **Phase 1 — Tracking MVP (W&B parity baseline):** SDK `init`/`log`/`finish`, Ingestion
-  Gateway, ClickHouse metrics path, Control API (projects/runs CRUD + query), minimal UI with live
-  charts + config panel. *Exit:* log scalars from a real script and watch them live.
+- [x] **Phase 1 — Tracking MVP (W&B parity baseline):** SDK `init`/`log`/`finish` (online mode),
+  Ingestion Gateway (buffered ClickHouse insert + load-shed backpressure), ClickHouse metrics path,
+  Control API (projects/runs CRUD + downsampled metric query), web UI with polling live charts +
+  config panel. *Exit met:* `examples/train_demo.py` logs scalars end-to-end (SDK → ingest →
+  ClickHouse) and they read back through the API; verified 270k pts landed under a concurrent probe.
 - [ ] **Phase 2 — Audio first-class:** `log_audio`, CAS object store + dedup + presigned upload,
   audio worker (transcode + peaks + spectrogram), Media Gateway, UI audio panel with
   player/waveform/spectrogram. *Exit:* log per-step samples and play+inspect them in the UI.
@@ -256,4 +258,10 @@ run.finish()
   split confirmed.
 - **2026-06-05:** Phase 0 scaffolding landed — monorepo, dev stack, proto, service skeletons (build
   green: Go tests pass, SDK offline smoke test passes), CI, k6 load-test harness + certification
-  process. Git initialized on `main` (not yet committed).
+  process. Pushed to github.com/mishraprafful/resonance (private).
+- **2026-06-05:** Phase 1 landed and verified end-to-end against the live dev stack: SDK online →
+  ingest gateway → ClickHouse; Control API serves runs (Postgres) + downsampled metrics
+  (ClickHouse); web UI builds + typechecks. Local single-replica throughput probe: ~640k metric
+  points/sec accepted, 270k landed, load-shed (503) verified when the ingest buffer saturates. All
+  unit suites green (Python + Go). NOTE: ClickHouse metric columns are typed `UUID`, so ingest
+  requires valid UUID run/project/org ids (the SDK gets these from the control API).

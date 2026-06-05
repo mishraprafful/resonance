@@ -42,3 +42,6 @@ deploy/dev/.data/
 # Go build artifacts (binaries named after package dir)
 services/media/media
 services/ingest/ingest
+
+# TS build info
+*.tsbuildinfo

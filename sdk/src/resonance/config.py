@@ -14,7 +14,9 @@ class Settings:
     development and for resuming after a crash. `mode="online"` talks to the ingestion gateway.
     """
 
-    base_url: str = os.environ.get("RESONANCE_BASE_URL", "http://localhost:8080")
+    # Control plane (projects/runs lifecycle, queries) and ingest hot path (metrics).
+    api_url: str = os.environ.get("RESONANCE_API_URL", "http://localhost:8000")
+    ingest_url: str = os.environ.get("RESONANCE_INGEST_URL", "http://localhost:8080")
     api_token: str | None = os.environ.get("RESONANCE_API_TOKEN")
     org: str = os.environ.get("RESONANCE_ORG", "dev")
     mode: str = os.environ.get("RESONANCE_MODE", "offline")  # offline | online

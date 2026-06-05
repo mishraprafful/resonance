@@ -68,7 +68,12 @@ upload**.
 > ⚠️ The **Design target** column states what the architecture is built to reach; the **Certified**
 > column is populated only from a passing run on the reference rig (see
 > [`loadtest/README.md`](./loadtest/README.md)). Unmeasured numbers are never published as certified.
-> As of Phase 0 no certification run has been performed.
+> No reference-rig certification run has been performed yet.
+>
+> **Local dev sanity (not certified):** on a single ingest replica on a laptop, a concurrent probe
+> sustained **~640k metric points/sec accepted** end-to-end into ClickHouse and exercised the
+> load-shed path (gateway returns `503` once its in-memory buffer saturates). This validates the
+> path, not the ceiling — formal numbers come from the k6 suite on the reference rig.
 
 Reproduce: bring up the stack + ingest gateway, then `./loadtest/run.sh http://localhost:8080`.
 
