@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "resonance"
+version = "0.0.1"
+description = "Audio-first ML experiment tracking — Python SDK"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+dependencies = [
+    "httpx>=0.27",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+audio = ["soundfile>=0.12"]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
+
+[project.scripts]
+resonance = "resonance.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/resonance"]
+
+[tool.ruff]
+line-length = 100

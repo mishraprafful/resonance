@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package resonance.v1;
+
+import "resonance/v1/common.proto";
+
+option go_package = "github.com/resonance/proto/resonance/v1;resonancev1";
+
+// Ingest is the hot-path gateway: batched metrics + audio upload coordination.
+// Bytes are NEVER sent through this service — audio uploads go direct to object
+// storage via a presigned URL returned by PrepareAssetUpload.
+service Ingest {
+  // Append a batch of scalar metrics for a run (non-blocking from the SDK side).
+  rpc LogMetrics(LogMetricsRequest) returns (LogMetricsResponse);
+
+  // Dedup check + presigned upload coordination for a content-addressed asset.
+  // If the asset already exists, no upload URL is returned (upload zero bytes).
+  rpc PrepareAssetUpload(PrepareAssetUploadRequest) returns (PrepareAssetUploadResponse);
+
+  // Register a per-run audio log entry once the asset is durable in object storage.
+  rpc LogAudio(LogAudioRequest) returns (LogAudioResponse);
+}
+
+message LogMetricsRequest {
+  RunRef run = 1;
+  repeated MetricPoint points = 2;
+}
+message LogMetricsResponse {
+  int64 accepted = 1;
+}
+
+message PrepareAssetUploadRequest {
+  string org_id     = 1;
+  string sha256     = 2;   // client-computed content hash
+  string media_type = 3;   // e.g. "audio/wav"
+  int64  size_bytes = 4;
+}
+message PrepareAssetUploadResponse {
+  bool   exists      = 1;  // true => already stored, skip upload
+  string upload_url  = 2;  // presigned PUT URL when exists == false
+  string storage_key = 3;  // content-addressed object key
+}
+
+message AudioMeta {
+  int32  sample_rate = 1;
+  int32  channels    = 2;
+  double duration_s  = 3;
+}
+
+message LogAudioRequest {
+  RunRef    run           = 1;
+  string    key           = 2;   // logical key, e.g. "samples/val"
+  int64     step          = 3;
+  string    asset_sha     = 4;
+  string    reference_sha = 5;   // optional ground-truth for A/B
+  string    caption       = 6;
+  AudioMeta meta          = 7;
+}
+message LogAudioResponse {
+  string audio_log_id = 1;
+}

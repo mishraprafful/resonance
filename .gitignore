@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+
+# Go
+bin/
+*.test
+*.out
+vendor/
+
+# Node / web
+node_modules/
+web/dist/
+*.local
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Data / local stack volumes
+deploy/dev/.data/
+*.log
+
+# Resonance local spool (offline SDK runs)
+.resonance/
+
+# Go build artifacts (binaries named after package dir)
+services/media/media
+services/ingest/ingest

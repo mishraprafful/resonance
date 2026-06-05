@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package resonance.v1;
+
+option go_package = "github.com/resonance/proto/resonance/v1;resonancev1";
+
+// A single scalar metric observation.
+message MetricPoint {
+  string metric = 1;   // e.g. "loss/mel"
+  int64  step   = 2;
+  double value  = 3;
+  int64  ts_ms  = 4;   // client timestamp, epoch millis (server may override)
+}
+
+// Identifies the run a batch of data belongs to.
+message RunRef {
+  string org_id     = 1;
+  string project_id = 2;
+  string run_id     = 3;
+}
