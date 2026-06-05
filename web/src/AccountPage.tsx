@@ -1,7 +1,19 @@
-// Account & teams: see your teams, switch the active team, create a team, request to join others,
-// and (for team owners/admins) approve/deny pending join requests.
+// Account & Teams: your teams (switch / active), create a team, request to join others, and — for
+// team owners/admins — approve/deny pending join requests. Wired to the real /v1/teams + auth APIs.
 import { useEffect, useState } from "react";
 import { api, type Me } from "./api";
+import { fmt } from "./design/theme";
+import { Icon } from "./design/icons";
+import { Badge, Btn, Empty, SectionLabel } from "./design/ui";
+
+function Field({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const [focus, setFocus] = useState(false);
+  return (
+    <input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
+      style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${focus ? "var(--accent)" : "var(--line)"}`, background: "var(--panel)",
+        borderRadius: 8, padding: "11px 13px", fontSize: 14, fontFamily: "var(--font-body)", color: "var(--ink)", outline: "none" }} />
+  );
+}
 
 export function AccountPage({ me, reload }: { me: Me; reload: () => void }) {
   const [allTeams, setAllTeams] = useState<{ id: string; slug: string; name: string }[]>([]);
@@ -9,65 +21,111 @@ export function AccountPage({ me, reload }: { me: Me; reload: () => void }) {
   const [newTeam, setNewTeam] = useState("");
   const myOrgIds = new Set(me.teams.map((t) => t.org_id));
   const adminTeam = me.teams.find((t) => t.role === "owner" || t.role === "admin");
+  const pendingSlugs = new Set(me.pending_requests.map((r) => r.slug));
 
   useEffect(() => { api.listTeams().then(setAllTeams).catch(() => {}); }, [me]);
   useEffect(() => {
     if (adminTeam) api.listRequests(adminTeam.org_id).then(setRequests).catch(() => setRequests([]));
+    else setRequests([]);
   }, [adminTeam?.org_id]);
 
+  const refreshRequests = () => {
+    if (adminTeam) api.listRequests(adminTeam.org_id).then(setRequests).catch(() => {});
+  };
+  const decide = (reqId: string, action: "approve" | "deny") => {
+    if (adminTeam) api.decideRequest(adminTeam.org_id, reqId, action).then(refreshRequests).catch(() => {});
+  };
+
+  const pending = requests.filter((r) => r.status === "pending");
+
   return (
-    <section style={{ maxWidth: 560 }}>
-      <h2>Account</h2>
-      <p>
-        Signed in as <strong>{me.username}</strong>{me.is_admin ? " (platform admin)" : ""}.{" "}
-        <button onClick={() => api.logout().then(reload)}>Log out</button>
-      </p>
+    <div style={{ maxWidth: 760 }}>
+      <h1 style={{ fontFamily: "var(--font-display)", fontSize: 34, fontWeight: 500, letterSpacing: "-0.03em", margin: 0, color: "var(--ink-strong)" }}>Account</h1>
 
-      <h3>Your teams</h3>
-      {me.teams.length === 0 && <p style={{ color: "#888" }}>No team yet — create one or request to join below.</p>}
-      <ul style={{ listStyle: "none", padding: 0 }}>
-        {me.teams.map((t) => (
-          <li key={t.org_id} style={{ marginBottom: 4 }}>
-            <strong>{t.name}</strong> <span style={{ fontSize: 12, color: "#888" }}>· {t.role}</span>{" "}
-            {me.current_org === t.org_id
-              ? <span style={{ fontSize: 12, color: "#4f46e5" }}>● active</span>
-              : <button onClick={() => api.switchTeam(t.org_id).then(reload)}>switch</button>}
-          </li>
-        ))}
-      </ul>
+      {/* identity */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 18, marginBottom: 26, background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, padding: 16 }}>
+        <span style={{ width: 46, height: 46, borderRadius: 12, background: "var(--accent)", color: "var(--accent-ink)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 17, fontFamily: "var(--font-display)" }}>{fmt.initials(me.username)}</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 16, fontWeight: 600, color: "var(--ink-strong)" }}>{me.username}</span>
+            {me.is_admin && <Badge tone="accent">platform admin</Badge>}
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>{me.teams.length} team{me.teams.length !== 1 ? "s" : ""} · active scope governs everything you see</div>
+        </div>
+        <Btn kind="outline" icon="arrow-up-right" onClick={() => api.logout().then(reload)}>Log out</Btn>
+      </div>
 
-      <h3>Create a team</h3>
-      <input placeholder="team name" value={newTeam} onChange={(e) => setNewTeam(e.target.value)} />
-      <button onClick={() => newTeam && api.createTeam(newTeam, newTeam).then(() => { setNewTeam(""); reload(); })}>create</button>
+      {/* your teams */}
+      <SectionLabel>Your teams</SectionLabel>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28 }}>
+        {me.teams.length === 0 && <Empty msg="No team yet — create one or request to join below." />}
+        {me.teams.map((t) => {
+          const active = me.current_org === t.org_id;
+          return (
+            <div key={t.org_id} style={{ display: "flex", alignItems: "center", gap: 14, background: "var(--panel)", border: `1px solid ${active ? "var(--accent)" : "var(--line)"}`, borderRadius: 12, padding: 14 }}>
+              <span style={{ width: 38, height: 38, borderRadius: 10, background: "var(--panel-3)", color: "var(--ink)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="layers" size={18} /></span>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontWeight: 600, color: "var(--ink-strong)", fontSize: 14.5, whiteSpace: "nowrap" }}>{t.name}</span>
+                  <Badge tone={t.role === "owner" ? "accent" : "neutral"}>{t.role}</Badge>
+                </div>
+                <div style={{ fontSize: 12, color: "var(--faint)", marginTop: 2 }}>{t.slug}</div>
+              </div>
+              {active ? <Badge tone="ok"><Icon name="check" size={11} />active</Badge> : <Btn kind="soft" onClick={() => api.switchTeam(t.org_id).then(reload)}>Switch</Btn>}
+            </div>
+          );
+        })}
+      </div>
 
-      <h3>Request to join</h3>
-      {me.pending_requests.length > 0 && (
-        <p style={{ fontSize: 12, color: "#888" }}>Pending: {me.pending_requests.map((r) => r.slug).join(", ")}</p>
-      )}
-      <ul style={{ listStyle: "none", padding: 0 }}>
-        {allTeams.filter((t) => !myOrgIds.has(t.id)).map((t) => (
-          <li key={t.id} style={{ marginBottom: 4 }}>
-            {t.name}{" "}
-            <button onClick={() => api.requestJoin(t.id).then(reload)}>request to join</button>
-          </li>
-        ))}
-      </ul>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28 }} className="res-detail-grid">
+        {/* create team */}
+        <div>
+          <SectionLabel>Create a team</SectionLabel>
+          <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+            <Field value={newTeam} onChange={setNewTeam} placeholder="team name" />
+            <Btn kind="primary" icon="plus" onClick={() => { if (newTeam.trim()) api.createTeam(newTeam.trim(), newTeam.trim()).then(() => { setNewTeam(""); reload(); }); }} style={{ justifyContent: "center" }}>Create team</Btn>
+          </div>
+        </div>
 
+        {/* request to join */}
+        <div>
+          <SectionLabel>Request to join</SectionLabel>
+          <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, padding: 8, display: "flex", flexDirection: "column" }}>
+            {allTeams.filter((t) => !myOrgIds.has(t.id)).map((t, i, arr) => {
+              const isPending = pendingSlugs.has(t.slug);
+              return (
+                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 8px", borderBottom: i < arr.length - 1 ? "1px solid var(--line-soft)" : "none" }}>
+                  <span style={{ width: 30, height: 30, borderRadius: 8, background: "var(--panel-3)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}><Icon name="layers" size={15} /></span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{t.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--faint)" }}>{t.slug}</div>
+                  </div>
+                  {isPending ? <Badge tone="warn">requested</Badge> : <Btn kind="outline" size="sm" onClick={() => api.requestJoin(t.id).then(reload)}>Request</Btn>}
+                </div>
+              );
+            })}
+            {allTeams.filter((t) => !myOrgIds.has(t.id)).length === 0 && <div style={{ padding: 16, textAlign: "center", color: "var(--faint)", fontSize: 13 }}>You're on every team.</div>}
+          </div>
+        </div>
+      </div>
+
+      {/* admin: join requests */}
       {adminTeam && (
-        <>
-          <h3>Join requests for {adminTeam.name}</h3>
-          {requests.length === 0 && <p style={{ color: "#888" }}>No pending requests.</p>}
-          <ul style={{ listStyle: "none", padding: 0 }}>
-            {requests.map((r) => (
-              <li key={r.id} style={{ marginBottom: 4 }}>
-                {r.username}{" "}
-                <button onClick={() => api.decideRequest(adminTeam.org_id, r.id, "approve").then(() => api.listRequests(adminTeam.org_id).then(setRequests))}>approve</button>{" "}
-                <button onClick={() => api.decideRequest(adminTeam.org_id, r.id, "deny").then(() => api.listRequests(adminTeam.org_id).then(setRequests))}>deny</button>
-              </li>
+        <div style={{ marginTop: 28 }}>
+          <SectionLabel right={<span style={{ fontSize: 12, color: "var(--faint)" }}>{adminTeam.name} · you are {adminTeam.role}</span>}>Pending join requests</SectionLabel>
+          <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, padding: pending.length ? 8 : 0 }}>
+            {pending.length === 0 && <div style={{ padding: 24, textAlign: "center", color: "var(--faint)", fontSize: 13 }}>No pending requests.</div>}
+            {pending.map((r, i) => (
+              <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 8px", borderBottom: i < pending.length - 1 ? "1px solid var(--line-soft)" : "none" }}>
+                <span style={{ width: 32, height: 32, borderRadius: 8, background: "var(--panel-3)", color: "var(--ink)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, fontFamily: "var(--font-display)" }}>{fmt.initials(r.username)}</span>
+                <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{r.username}</span>
+                <Btn kind="primary" size="sm" icon="check" onClick={() => decide(r.id, "approve")}>Approve</Btn>
+                <Btn kind="soft" size="sm" onClick={() => decide(r.id, "deny")}>Deny</Btn>
+              </div>
             ))}
-          </ul>
-        </>
+          </div>
+        </div>
       )}
-    </section>
+    </div>
   );
 }
