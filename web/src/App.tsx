@@ -1,11 +1,11 @@
 // Resonance web UI — auth-gated, team-scoped shell on the Epidemic Sound design system.
 // Top-nav (default) or sidebar layout, project + team switchers, and the runs / compare / gallery /
 // datasets / account surfaces. The active team scopes everything; Tweaks control theme & layout.
-import { useEffect, useState } from "react";
-import { api, type Me, type Project } from "./api";
+import { useCallback, useEffect, useState } from "react";
+import { api, ApiError, type Me, type Project } from "./api";
 import { fmt, themeVars, type Tweaks } from "./design/theme";
 import { Icon } from "./design/icons";
-import { Empty } from "./design/ui";
+import { Btn, ConfirmDialog, Empty } from "./design/ui";
 import { useTweaks, TweaksPanel } from "./design/tweaks";
 import { AuthGate } from "./Auth";
 import { RunsView } from "./RunsView";
@@ -15,8 +15,9 @@ import { GalleryPage } from "./GalleryPage";
 import { DatasetsPage } from "./DatasetsPage";
 import { AccountPage } from "./AccountPage";
 
-type View = "runs" | "compare" | "gallery" | "datasets" | "account";
+type View = "projects" | "new-project" | "runs" | "compare" | "gallery" | "datasets" | "account";
 
+// Project-scoped nav (only shown once a project is open); the "Projects" home is always present.
 const NAV: { id: View; label: string; icon: string }[] = [
   { id: "runs", label: "Runs", icon: "activity" },
   { id: "compare", label: "Compare", icon: "columns" },
@@ -24,14 +25,16 @@ const NAV: { id: View; label: string; icon: string }[] = [
   { id: "datasets", label: "Datasets", icon: "database" },
 ];
 
-function Logo() {
+function Logo({ onClick }: { onClick?: () => void }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+    <button onClick={onClick} title="Home" disabled={!onClick}
+      style={{ display: "flex", alignItems: "center", gap: 10, border: 0, background: "transparent", padding: 0,
+        cursor: onClick ? "pointer" : "default", fontFamily: "var(--font-body)" }}>
       <span style={{ width: 26, height: 26, borderRadius: 7, background: "var(--accent)", color: "var(--accent-ink)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <Icon name="waveform" size={16} />
       </span>
       <span style={{ fontFamily: "var(--font-display)", fontWeight: 500, fontSize: 17, letterSpacing: "-0.02em", color: "var(--ink-strong)" }}>Resonance</span>
-    </div>
+    </button>
   );
 }
 
@@ -130,25 +133,131 @@ const menuItemStyle: React.CSSProperties = {
   padding: "9px 10px", cursor: "pointer", color: "var(--ink)", textAlign: "left", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap",
 };
 
+function ProjectsGrid({ projects, onOpen, onNew }: { projects: Project[]; onOpen: (slug: string) => void; onNew: () => void }) {
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 22, gap: 16 }}>
+        <div>
+          <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 500, fontSize: 26, letterSpacing: "-0.02em", margin: 0, color: "var(--ink-strong)" }}>Projects</h1>
+          <p style={{ margin: "6px 0 0", fontSize: 13.5, color: "var(--muted)" }}>{projects.length} project{projects.length === 1 ? "" : "s"} in this team</p>
+        </div>
+        <Btn kind="primary" icon="plus" onClick={onNew}>New project</Btn>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(248px, 1fr))", gap: 16 }}>
+        {projects.map((p) => (
+          <button key={p.id} onClick={() => onOpen(p.slug)}
+            style={{ textAlign: "left", width: "100%", border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, padding: 20,
+              cursor: "pointer", display: "flex", flexDirection: "column", gap: 14, minHeight: 150 }}>
+            <span style={{ width: 40, height: 40, borderRadius: 10, background: "var(--accent)", color: "var(--accent-ink)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <Icon name="music" size={20} />
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: "var(--font-display)", fontWeight: 500, fontSize: 17, color: "var(--ink-strong)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
+              <div style={{ fontSize: 12, color: "var(--faint)", fontFamily: "var(--mono)", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.slug}</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto", fontSize: 12, color: "var(--muted)" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><Icon name="clock" size={13} />{fmt.ago(p.created_at)}</span>
+              <Icon name="chevron-right" size={16} style={{ color: "var(--faint)" }} />
+            </div>
+          </button>
+        ))}
+        <button onClick={onNew}
+          style={{ textAlign: "left", border: "1.5px dashed var(--line)", background: "transparent", borderRadius: 14, padding: 20,
+            cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 14, minHeight: 150, color: "var(--muted)" }}>
+          <span style={{ width: 40, height: 40, borderRadius: 10, background: "var(--panel-3)", color: "var(--ink)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Icon name="plus" size={20} />
+          </span>
+          <div style={{ marginTop: "auto" }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 500, fontSize: 16, color: "var(--ink-strong)" }}>New project</div>
+            <div style={{ fontSize: 12, color: "var(--faint)", marginTop: 3 }}>Create an empty project</div>
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function NewProject({ onCreate, onCancel }: { onCreate: (slug: string, name: string) => Promise<void>; onCancel?: () => void }) {
+  const [name, setName] = useState("");
+  const [focus, setFocus] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const submit = () => {
+    if (!slug || busy) return;
+    setBusy(true); setErr(null);
+    onCreate(slug, name.trim())
+      .catch((e) => setErr(e instanceof ApiError ? e.message : "could not create project"))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div style={{ display: "flex", justifyContent: "center", paddingTop: 64 }}>
+      <div style={{ width: "100%", maxWidth: 440, background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 14, padding: 28 }}>
+        {onCancel && (
+          <button onClick={onCancel} className="res-link"
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, border: 0, background: "transparent", color: "var(--muted)", cursor: "pointer", fontSize: 12.5, padding: 0, marginBottom: 16, fontFamily: "var(--font-body)" }}>
+            <Icon name="chevron-left" size={15} />Back to projects
+          </button>
+        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
+          <span style={{ width: 38, height: 38, borderRadius: 9, background: "var(--accent)", color: "var(--accent-ink)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Icon name="music" size={19} />
+          </span>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 500, fontSize: 18, color: "var(--ink-strong)" }}>New project</div>
+        </div>
+        <p style={{ fontSize: 13.5, color: "var(--muted)", margin: "0 0 18px", lineHeight: 1.5 }}>
+          {onCancel
+            ? "Add a project to this team. You can also create one by logging a run with the SDK pointed at this team."
+            : "No projects in this team yet. Create one here, or log a run with the SDK pointed at this team — either creates the project."}
+        </p>
+        <input
+          value={name} placeholder="Project name" autoFocus
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+          onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
+          style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${focus ? "var(--accent)" : "var(--line)"}`, background: "var(--panel)",
+            borderRadius: 8, padding: "11px 13px", fontSize: 14, fontFamily: "var(--font-body)", color: "var(--ink)", outline: "none" }} />
+        <div style={{ fontSize: 12, color: "var(--faint)", margin: "8px 2px 16px", minHeight: 16 }}>
+          {slug ? <>slug: <span style={{ fontFamily: "var(--mono)", color: "var(--muted)" }}>{slug}</span></> : "used in run logging and URLs"}
+        </div>
+        {err && <div style={{ fontSize: 12.5, color: "var(--bad)", marginBottom: 12 }}>{err}</div>}
+        <Btn kind="primary" icon="plus" disabled={!slug || busy} onClick={submit} style={{ width: "100%", justifyContent: "center" }}>
+          {busy ? "Creating…" : "Create project"}
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
 function Shell({ me, reload, t }: { me: Me; reload: () => void; t: Tweaks }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectSlug, setProjectSlug] = useState<string | null>(null);
-  const [view, setView] = useState<View>(me.current_org ? "runs" : "account");
+  const [view, setView] = useState<View>(me.current_org ? "projects" : "account");
   const [runId, setRunId] = useState<string | null>(null);
   const [compareSeed, setCompareSeed] = useState<string[]>([]);
   const [runsView, setRunsView] = useState<"table" | "cards">(t.runsView);
+  const [delProject, setDelProject] = useState<Project | null>(null);
+  const [delBusy, setDelBusy] = useState(false);
+  const [delErr, setDelErr] = useState<string | null>(null);
   useEffect(() => { setRunsView(t.runsView); }, [t.runsView]);
 
-  useEffect(() => {
+  // Only owners/admins of the active team (or platform admins) can delete projects.
+  const activeRole = me.teams.find((tm) => tm.org_id === me.current_org)?.role;
+  const canManage = me.is_admin || activeRole === "owner" || activeRole === "admin";
+
+  const loadProjects = useCallback(() => {
     if (!me.current_org) {
       setProjects([]);
       return;
     }
     api.projects().then((ps) => {
       setProjects(ps);
-      setProjectSlug((cur) => (cur && ps.some((p) => p.slug === cur) ? cur : ps[0]?.slug ?? null));
+      // No auto-select: the default landing is the projects grid, not a single project's runs.
+      // Keep the current selection only if it still exists.
+      setProjectSlug((cur) => (cur && ps.some((p) => p.slug === cur) ? cur : null));
     }).catch(() => setProjects([]));
   }, [me.current_org]);
+  useEffect(() => { loadProjects(); }, [loadProjects]);
 
   const project = projects.find((p) => p.slug === projectSlug) ?? null;
 
@@ -157,8 +266,35 @@ function Shell({ me, reload, t }: { me: Me; reload: () => void; t: Tweaks }) {
   const pickProject = (slug: string) => { setProjectSlug(slug); setRunId(null); setView("runs"); };
   const addCompare = (id?: string) => { setCompareSeed(id ? [id] : []); setView("compare"); setRunId(null); };
   const openAccount = () => { setView("account"); setRunId(null); };
+  // Optimistically show the freshly created project and drop straight into it.
+  const onProjectCreated = (p: Project) => {
+    setProjects((cur) => (cur.some((x) => x.slug === p.slug) ? cur : [p, ...cur]));
+    setProjectSlug(p.slug);
+    setRunId(null);
+    setView("runs");
+  };
+  const confirmDeleteProject = () => {
+    if (!delProject) return;
+    const slug = delProject.slug;
+    setDelBusy(true); setDelErr(null);
+    api.deleteProject(slug)
+      .then(() => {
+        // Stay on whatever surface triggered the delete (e.g. the Account page).
+        setProjects((cur) => cur.filter((p) => p.slug !== slug));
+        setProjectSlug((cur) => (cur === slug ? null : cur));
+        setRunId(null);
+        setDelProject(null);
+      })
+      .catch((e) => setDelErr(e instanceof ApiError ? e.message : "could not delete project"))
+      .finally(() => setDelBusy(false));
+  };
 
-  const navItems = NAV.map((n) => {
+  // "Projects" home is always available; the per-project surfaces appear only inside a project.
+  const navList: { id: View; label: string; icon: string }[] = [
+    { id: "projects", label: "Projects", icon: "layers" },
+    ...(project ? NAV : []),
+  ];
+  const navItems = navList.map((n) => {
     const active = view === n.id;
     return (
       <button key={n.id} onClick={() => go(n.id)}
@@ -171,12 +307,20 @@ function Shell({ me, reload, t }: { me: Me; reload: () => void; t: Tweaks }) {
   });
 
   const main = view === "account"
-    ? <AccountPage me={me} reload={reload} />
+    ? <AccountPage me={me} reload={reload} projects={projects}
+        canManageProjects={canManage}
+        onDeleteProject={canManage ? (p) => { setDelErr(null); setDelProject(p); } : undefined} />
     : !me.current_org
       ? <Empty msg="You're not on a team yet — create or join one from Account & teams." />
-      : !project
-        ? <Empty msg="No projects in this team yet. Create one with the SDK." />
-        : (
+      : (view === "new-project" || projects.length === 0)
+        // Explicit "New project" action, or the zero-state when the team has no projects yet.
+        ? <NewProject
+            onCreate={(slug, name) => api.createProject(slug, name).then(onProjectCreated)}
+            onCancel={projects.length ? () => go("projects") : undefined} />
+        : (view === "projects" || !project)
+          // Default landing: cards for every project the user can access.
+          ? <ProjectsGrid projects={projects} onOpen={pickProject} onNew={() => setView("new-project")} />
+          : (
           <>
             {view === "runs" && !runId && <RunsView project={project} runsView={{ value: runsView, set: setRunsView }} onOpenRun={openRun} onCompare={() => addCompare()} colormap={t.colormap} />}
             {view === "runs" && runId && <RunDetail runId={runId} project={project} onBack={() => setRunId(null)} onCompare={addCompare} chartStyle={t.chartStyle} colormap={t.colormap} />}
@@ -186,11 +330,24 @@ function Shell({ me, reload, t }: { me: Me; reload: () => void; t: Tweaks }) {
           </>
         );
 
+  const projectDeleteDialog = delProject && (
+    <ConfirmDialog
+      title={`Delete ${delProject.name}?`}
+      confirmLabel="Delete project"
+      busy={delBusy}
+      error={delErr}
+      onCancel={() => { if (!delBusy) setDelProject(null); }}
+      onConfirm={confirmDeleteProject}
+      message={<>This <b style={{ color: "var(--ink)" }}>permanently deletes</b> <b style={{ color: "var(--ink)" }}>{delProject.name}</b> and all of its runs, logged audio and dataset versions. This cannot be undone.</>}
+    />
+  );
+
   if (t.layout === "sidebar") {
     return (
       <div style={{ display: "flex", minHeight: "100vh" }}>
+        {projectDeleteDialog}
         <aside style={{ width: 232, flexShrink: 0, borderRight: "1px solid var(--line)", background: "var(--panel)", display: "flex", flexDirection: "column", padding: 16, gap: 16, position: "sticky", top: 0, height: "100vh", boxSizing: "border-box" }}>
-          <Logo />
+          <Logo onClick={() => go("projects")} />
           <TeamSwitcher me={me} reload={reload} onManage={openAccount} />
           {project && <ProjectSwitcher project={project} projects={projects} onPick={pickProject} />}
           <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>{navItems}</nav>
@@ -210,8 +367,9 @@ function Shell({ me, reload, t }: { me: Me; reload: () => void; t: Tweaks }) {
 
   return (
     <div>
+      {projectDeleteDialog}
       <header style={{ position: "sticky", top: 0, zIndex: 40, borderBottom: "1px solid var(--line)", background: "color-mix(in srgb, var(--panel) 85%, transparent)", backdropFilter: "blur(12px)", padding: "0 24px", height: 64, display: "flex", alignItems: "center", gap: 18 }}>
-        <Logo />
+        <Logo onClick={() => go("projects")} />
         <TeamSwitcher me={me} reload={reload} onManage={openAccount} />
         {project && <div style={{ width: 200 }}><ProjectSwitcher project={project} projects={projects} onPick={pickProject} /></div>}
         <nav style={{ display: "flex", gap: 4 }}>{navItems}</nav>
