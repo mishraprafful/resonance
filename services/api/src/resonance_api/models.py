@@ -150,12 +150,21 @@ class OrgCreate(BaseModel):
     storage_quota_bytes: int | None = None
 
 
+class LifecyclePolicy(BaseModel):
+    """Per-tenant storage-lifecycle thresholds (days since last activity). Either may be omitted to
+    fall back to the platform default for that stage."""
+    ia_days: float | None = None
+    archive_days: float | None = None
+
+
 class Org(BaseModel):
     id: str
     slug: str
     name: str
     storage_quota_bytes: int | None = None
     storage_used_bytes: int = 0
+    lifecycle_policy: dict | None = None       # {ia_days, archive_days}; None => platform defaults
+    storage_tiers: dict[str, int] = Field(default_factory=dict)  # {tier: asset_count}
     created_at: datetime
 
 

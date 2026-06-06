@@ -43,6 +43,13 @@ export MEDIA_PUBLIC_URL="${MEDIA_PUBLIC_URL:-http://localhost:$MEDIA_PORT}"
 export PANDAPROXY_URL="${PANDAPROXY_URL:-http://localhost:8082}"
 export DERIVATION_TOPIC="${DERIVATION_TOPIC:-audio.derivations}"
 export CONSUMER_GROUP="${CONSUMER_GROUP:-resonance-derivers}"
+# Storage lifecycle tiering: the worker periodically tiers assets hot->ia->archive by access recency
+# and tags the object (resonance-tier) for real S3 lifecycle rules. Short sweep locally so it's
+# observable; defaults to a 30/90-day policy (per-tenant override via PUT /v1/orgs/{id}/lifecycle).
+export LIFECYCLE_ENABLED="${LIFECYCLE_ENABLED:-true}"
+export LIFECYCLE_SWEEP_S="${LIFECYCLE_SWEEP_S:-60}"
+export LIFECYCLE_IA_DAYS="${LIFECYCLE_IA_DAYS:-30}"
+export LIFECYCLE_ARCHIVE_DAYS="${LIFECYCLE_ARCHIVE_DAYS:-90}"
 export PYTHONUNBUFFERED=1
 
 _pid_file() { echo "$RUN/$1.pid"; }

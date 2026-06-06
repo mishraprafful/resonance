@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS orgs (
     name               TEXT NOT NULL,
     storage_quota_bytes BIGINT,            -- NULL = unlimited
     rate_limit_per_min  INT,               -- NULL = unlimited
+    -- Per-tenant storage-lifecycle policy {ia_days, archive_days}; NULL => platform defaults.
+    lifecycle_policy   JSONB,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -90,12 +92,21 @@ CREATE TABLE IF NOT EXISTS assets (
     -- Async derivations (waveform peaks, spectrogram, streamable rendition) produced by workers.
     derived_at  TIMESTAMPTZ,             -- NULL => still needs derivation (DB-backed work queue)
     derivations JSONB NOT NULL DEFAULT '{}',  -- {peaks_key, spectrogram_key, rendition_key}
+    -- Storage lifecycle tiering (Phase 5). The worker's lifecycle sweep transitions hot -> ia ->
+    -- archive by age since last activity (per-tenant policy) and applies the tier as an S3 object
+    -- tag (real S3/GCS lifecycle rules key off it); access warms an asset back to hot. Non-destructive
+    -- — bytes are never deleted, only their storage class/cost changes.
+    storage_tier     TEXT NOT NULL DEFAULT 'hot',  -- hot | ia | archive
+    last_accessed_at TIMESTAMPTZ,                   -- recency signal; bumped when a URL is minted
+    tiered_at        TIMESTAMPTZ,                   -- when storage_tier last changed
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (org_id, sha256)         -- dedup is per-tenant
 );
 -- Workers claim derivation work by scanning for rows where derived_at IS NULL.
 CREATE INDEX IF NOT EXISTS assets_pending_derivation_idx
     ON assets (created_at) WHERE derived_at IS NULL;
+-- Lifecycle sweep + per-tenant tier breakdowns scan by (org, tier).
+CREATE INDEX IF NOT EXISTS assets_tier_idx ON assets (org_id, storage_tier);
 
 -- Per-run audio log entries referencing an asset (the first-class audio primitive).
 CREATE TABLE IF NOT EXISTS audio_logs (
