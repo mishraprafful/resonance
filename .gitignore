@@ -21,6 +21,11 @@ node_modules/
 web/dist/
 *.local
 
+# Playwright (web E2E) artifacts
+web/test-results/
+web/playwright-report/
+web/.playwright/
+
 # Env / secrets
 .env
 .env.*

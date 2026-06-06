@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose -f deploy/dev/docker-compose.yml
 
-.PHONY: help dev-up dev-down dev-logs dev-ps lint test e2e \
+.PHONY: help dev-up dev-down dev-logs dev-ps lint test e2e e2e-web \
         sdk-install api-install workers-install web-install \
         ingest-build media-build
 
@@ -78,6 +78,8 @@ test: ## Run all tests
 ## --- End-to-end suite (merge gate) ---
 e2e: ## Bring up the full stack, run the end-to-end suite against it, tear down (KEEP_UP=1 to keep)
 	./e2e/run.sh
+e2e-web: ## Like `make e2e` but also runs the Playwright web UI E2E (starts the web dev server)
+	E2E_WEB=1 ./e2e/run.sh
 
 ## --- Load testing / capacity certification ---
 loadtest: ## Run the k6 load-test suite (requires k6); BASE_URL overridable

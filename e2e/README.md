@@ -14,6 +14,7 @@ caught here rather than in production.
 
 ```bash
 make e2e                      # bring up the full stack + services, run the suite, tear down
+make e2e-web                  # also run the Playwright web UI E2E (starts the web dev server)
 KEEP_UP=1 make e2e            # leave everything running afterwards (debug a failure)
 E2E_NO_STACK=1 ./e2e/run.sh   # run against an already-up stack (e.g. you ran `make up`)
 E2E_PYTEST_ARGS="-k audio -x" ./e2e/run.sh   # focus on one plane, stop on first failure
@@ -21,12 +22,14 @@ E2E_PYTEST_ARGS="-k audio -x" ./e2e/run.sh   # focus on one plane, stop on first
 
 `make e2e` is `e2e/run.sh`, which: brings up the docker dev stack → waits for the data planes →
 builds + starts the backend services (`ingest`, `media`, `api`, `worker`) on the host via
-`scripts/dev.sh` (web/vite is skipped via `DEV_SERVICES`) → waits for them → runs `pytest` → tears
-everything down. Service logs are left under `.run/*.log` on failure.
+`scripts/dev.sh` (web/vite is skipped via `DEV_SERVICES` unless `E2E_WEB` is set) → waits for them →
+runs `pytest` → (with `E2E_WEB`) seeds + runs the Playwright web UI E2E → tears everything down.
+Service logs are left under `.run/*.log` on failure.
 
 Requirements: Docker + `docker compose`, Go 1.22, Python 3.11, and `libsndfile` (for `soundfile`).
-Everything else installs into the shared `.venv` (`e2e/requirements.txt` + the editable SDK/API/
-workers).
+The web UI E2E additionally needs Node 20 + a Playwright browser (`make e2e-web` installs both on
+first run; CI installs them explicitly). Everything else installs into the shared `.venv`
+(`e2e/requirements.txt` + the editable SDK/API/workers).
 
 ## What it covers (and where each criterion lives)
 
@@ -39,6 +42,7 @@ The suite is organized by data plane and asserts the **Phase exit criteria** in 
 | `test_audio.py` | content-addressed **dedup (zero bytes on re-log)**, derivation (peaks + spectrogram + probes, **Postgres poll backstop**, idempotency), lazy/paginated listing (no URLs up front), media-gateway **range 200/206 + HMAC verify/expire/tamper 403**, **original-quality** compare path (§7b), dataset version collapse, ratings round-trip | Phase 2 / 3 + §7b |
 | `test_tenancy.py` | cross-tenant denial at **API layer and raw DB/RLS layer**, RBAC (member 403 / owner 200), the three principals (token / browser session / dev-open), **storage quota 413**, **rate limit 429**, browser auth (bootstrap → signup create/join → approve → per-team scoping) | Phase 4 / 4b |
 | `test_deferred.py` | documented, **skipped** placeholders for not-yet-built scope (storage tiering lifecycle; system-metrics path, issue #10) | Phase 5 deferrals |
+| `web/e2e/smoke.spec.ts` (Playwright) | **Web UI** smoke against the real `/v1` API: auth gate → login, run view (live charts + audio panel, **waveform from `peaks.json`**, server spectrogram), compare / gallery / datasets surfaces, logout. Seeded by `web/e2e/seed.py`. Runs via `make e2e-web` / CI (`E2E_WEB=1`). | Phase 4b + Web UI |
 
 ## Interpreting a failure
 

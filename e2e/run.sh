@@ -16,8 +16,13 @@ COMPOSE="docker compose -f $ROOT/deploy/dev/docker-compose.yml"
 VENV="$ROOT/.venv"
 PY="$VENV/bin/python"
 
-# E2E needs the backend services only — skip the web/vite bring-up (and its npm install).
-export DEV_SERVICES="${DEV_SERVICES:-ingest media api worker}"
+# E2E needs the backend services only — skip the web/vite bring-up (and its npm install). When the
+# Playwright web E2E is enabled (E2E_WEB), include the web/vite dev server too.
+if [ -n "${E2E_WEB:-}" ]; then
+  export DEV_SERVICES="${DEV_SERVICES:-ingest media api worker web}"
+else
+  export DEV_SERVICES="${DEV_SERVICES:-ingest media api worker}"
+fi
 
 # Pick a venv interpreter the scientific-stack wheels actually support. The newest CPython (e.g.
 # 3.14) often has no prebuilt numpy/soundfile/numba wheels yet, so a bare `python3` venv fails to
@@ -33,6 +38,7 @@ echo "==> using python: ${PYTHON:-python3} ($(${PYTHON:-python3} --version 2>&1)
 API_PORT="${API_PORT:-8000}"
 INGEST_HTTP_PORT="${INGEST_HTTP_PORT:-18080}"
 MEDIA_PORT="${MEDIA_PORT:-8090}"
+WEB_PORT="${WEB_PORT:-5280}"
 
 KEEP_UP="${KEEP_UP:-}"
 STARTED_STACK=""
@@ -74,7 +80,13 @@ fi
 echo "==> installing e2e requirements"
 "$VENV/bin/pip" install -q -r "$ROOT/e2e/requirements.txt"
 
-# --- 3. app services (ingest, media, api, worker) on the host ---
+# Web deps must exist before we start vite (below). CI pre-installs them + the Playwright browser.
+if [ -n "${E2E_WEB:-}" ] && [ ! -d "$ROOT/web/node_modules" ]; then
+  echo "==> installing web deps"
+  ( cd "$ROOT/web" && npm install --no-audit --no-fund )
+fi
+
+# --- 3. app services (ingest, media, api, worker[, web]) on the host ---
 echo "==> starting app services"
 bash "$ROOT/scripts/dev.sh" start
 
@@ -97,9 +109,29 @@ set +e
 RESULT=$?
 set -e
 
-if [ "$RESULT" -eq 0 ]; then
-  echo "==> e2e suite PASSED"
-else
-  echo "!! e2e suite FAILED (exit $RESULT) — app logs are under .run/*.log"
+# --- 6. Playwright web UI E2E (when E2E_WEB is set; CI sets it). Seeds data, then drives the real
+# app against the live /v1 API via the vite dev server.
+WEB_RESULT=0
+if [ -n "${E2E_WEB:-}" ]; then
+  echo "==> web E2E (Playwright)"
+  ( cd "$ROOT/web" && npx playwright install chromium >/dev/null 2>&1 || true )
+  echo "==> waiting for web dev server"
+  for _ in $(seq 1 90); do ready "http://localhost:$WEB_PORT" && break; sleep 1; done
+  set +e
+  echo "==> seeding web data"
+  PYTHONPATH="$ROOT/e2e" "$VENV/bin/python" "$ROOT/web/e2e/seed.py"
+  WEB_RESULT=$?
+  if [ "$WEB_RESULT" -eq 0 ]; then
+    ( cd "$ROOT/web" && PLAYWRIGHT_BASE_URL="http://localhost:$WEB_PORT" npx playwright test )
+    WEB_RESULT=$?
+  fi
+  set -e
 fi
-exit $RESULT
+
+if [ "$RESULT" -eq 0 ] && [ "$WEB_RESULT" -eq 0 ]; then
+  echo "==> e2e suite PASSED"
+  exit 0
+fi
+echo "!! e2e FAILED (pytest=$RESULT web=$WEB_RESULT) — app logs are under .run/*.log"
+[ "$RESULT" -ne 0 ] && exit "$RESULT"
+exit "$WEB_RESULT"
