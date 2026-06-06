@@ -21,6 +21,11 @@ export API_PORT="${API_PORT:-8000}"
 export WEB_PORT="${WEB_PORT:-5280}"
 export MEDIA_PORT="${MEDIA_PORT:-8090}"
 
+# Which app services to manage. Defaults to all; the e2e harness (and CI) set
+# DEV_SERVICES="ingest media api worker" to skip the vite/web bring-up (and its npm install).
+SERVICES="${DEV_SERVICES:-ingest media api worker web}"
+_want() { case " $SERVICES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
 # Service env — defaults line up with deploy/dev/docker-compose.yml.
 export CLICKHOUSE_URL="${CLICKHOUSE_URL:-http://localhost:8123}"
 export CLICKHOUSE_DB="${CLICKHOUSE_DB:-resonance}"
@@ -86,10 +91,12 @@ venv() {
     echo "==> existing venv is broken (project dir moved?) — recreating"
     rm -rf "$VENV"
   fi
-  [ -d "$VENV" ] || python3 -m venv "$VENV"
+  # Interpreter for the venv. Override with PYTHON=... (e.g. when the system python3 is too new for
+  # the scientific-stack wheels — numpy/soundfile/numba — which lag the newest CPython release).
+  [ -d "$VENV" ] || "${PYTHON:-python3}" -m venv "$VENV"
   "$VENV/bin/pip" install -q --upgrade pip
   "$VENV/bin/pip" install -q -e "$ROOT/sdk[audio]" -e "$ROOT/services/api" -e "$ROOT/workers" "uvicorn[standard]"
-  if [ ! -d "$ROOT/web/node_modules" ]; then
+  if _want web && [ ! -d "$ROOT/web/node_modules" ]; then
     echo "==> installing web deps"
     (cd "$ROOT/web" && npm install --no-audit --no-fund)
   fi
@@ -100,26 +107,26 @@ start() {
   [ -x "$PY" ] || { echo "venv missing — run: make app-install"; exit 1; }
   # Idempotent: only preflight a port for a service we're actually about to start (so re-running
   # `make up` while it's already up is a no-op, not an error).
-  _alive ingest || _preflight "$INGEST_HTTP_PORT" ingest INGEST_HTTP_PORT
-  _alive api    || _preflight "$API_PORT" api API_PORT
-  _alive media  || _preflight "$MEDIA_PORT" media MEDIA_PORT
-  _alive web    || _preflight "$WEB_PORT" web WEB_PORT
+  _want ingest && { _alive ingest || _preflight "$INGEST_HTTP_PORT" ingest INGEST_HTTP_PORT; }
+  _want api    && { _alive api    || _preflight "$API_PORT" api API_PORT; }
+  _want media  && { _alive media  || _preflight "$MEDIA_PORT" media MEDIA_PORT; }
+  _want web    && { _alive web    || _preflight "$WEB_PORT" web WEB_PORT; }
 
-  if ! _alive ingest; then
+  if _want ingest && ! _alive ingest; then
     echo "==> building ingest gateway"
     ( cd "$ROOT/services/ingest" && go build -o "$RUN/ingest-bin" ./cmd/ingest )
   fi
-  if ! _alive media; then
+  if _want media && ! _alive media; then
     echo "==> building media gateway"
     ( cd "$ROOT/services/media" && go build -o "$RUN/media-bin" ./cmd/media )
   fi
 
-  echo "==> starting app services"
-  _spawn ingest "$RUN/ingest-bin"
-  _spawn media  "$RUN/media-bin"
-  _spawn api    "$VENV/bin/uvicorn" resonance_api.main:app --host 127.0.0.1 --port "$API_PORT"
-  _spawn worker env POSTGRES_DSN="$PG_SUPER_DSN" "$PY" -m resonance_workers.main
-  _spawn web    "$ROOT/web/node_modules/.bin/vite" "$ROOT/web" --port "$WEB_PORT" --strictPort
+  echo "==> starting app services ($SERVICES)"
+  _want ingest && _spawn ingest "$RUN/ingest-bin"
+  _want media  && _spawn media  "$RUN/media-bin"
+  _want api    && _spawn api    "$VENV/bin/uvicorn" resonance_api.main:app --host 127.0.0.1 --port "$API_PORT"
+  _want worker && _spawn worker env POSTGRES_DSN="$PG_SUPER_DSN" "$PY" -m resonance_workers.main
+  _want web    && _spawn web    "$ROOT/web/node_modules/.bin/vite" "$ROOT/web" --port "$WEB_PORT" --strictPort
   echo
   echo "==> Resonance is up. Open: http://localhost:$WEB_PORT"
   echo "    (api :$API_PORT, ingest :$INGEST_HTTP_PORT)  —  'make demo' to log a sample run"

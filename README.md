@@ -77,6 +77,25 @@ upload**.
 
 Reproduce: bring up the stack + ingest gateway, then `./loadtest/run.sh http://localhost:8080`.
 
+## Testing
+
+- **Per-component** unit/lint/typecheck: `make test` / `make lint` (CI: `.github/workflows/ci.yml`).
+- **End-to-end** (the merge gate): `make e2e` boots the full stack + services and runs the
+  [`e2e/`](./e2e) suite against the live system — SDK→ingest→ClickHouse round-trip + sharding, audio
+  dedup/derivation/streaming, multi-tenant isolation (API + RLS), RBAC, quotas, rate limits, and
+  browser auth. A passing run is the authoritative "everything works" signal
+  (CI: `.github/workflows/e2e.yml`; see [`e2e/README.md`](./e2e/README.md)).
+- **Capacity** certification: the k6 suite in [`loadtest/`](./loadtest) (see above).
+
 ## Status
 
-Greenfield — Phase 0 (scaffolding). Roadmap and phase exit criteria live in `ARCHITECTURE.md`.
+**Phases 1–4 complete and verified end-to-end, plus Phase 4b (browser auth) and the first Phase 5
+slices** (Go media/streaming gateway + CDN-frontable playback, event-driven Redpanda derivation
+queue, ClickHouse sharding). Tracking, **audio first-class**, **audio UX depth** (A/B compare at
+original quality, lazy-presigned pagination, dataset versioning), and **multi-tenancy hardening**
+(orgs + hashed API tokens + RBAC, app-level org scoping **and** Postgres RLS, per-tenant storage
+quotas + rate limits) are all in. The [`e2e/`](./e2e) suite gates merges as the source of truth.
+
+**Next:** Phase 5 remainder + Phase 4 deferrals — SSO/OIDC, tiered storage lifecycle + CDN,
+autoscaling (HPA/KEDA), retention automation, observability (OTel/Prometheus/Grafana),
+Helm/Terraform/ArgoCD. Roadmap and per-phase exit criteria live in [`ARCHITECTURE.md`](./ARCHITECTURE.md).

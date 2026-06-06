@@ -145,10 +145,24 @@ services:
   # --- Stream queue ---
   redpanda:
     image: redpandadata/redpanda:latest
+    # Run as root so Redpanda can create its data subdirs in the bind-mounted ./.data/redpanda. Its
+    # image runs as the non-root `redpanda` user and does NOT chown the mount (unlike the Postgres/
+    # ClickHouse/MinIO entrypoints), so on native Linux (CI) it hits `mkdir: Permission denied` on a
+    # root-owned bind mount and exits 1. (Docker Desktop on macOS masks this — bind-mount ownership
+    # is ignored there — which is why it only failed in CI.)
+    user: root
     command:
+      # `--mode dev-container` is Redpanda's purpose-built profile for resource-constrained
+      # containers: it implies --overprovisioned, sets a small reserve, and bounds memory to a
+      # container-appropriate share instead of grabbing most of host RAM. Unbounded (the default
+      # mode), seastar reserves ~7.6GiB and runs abort_on_allocation_failure=true, so on a full-stack
+      # `up` (2 ClickHouse nodes + Keeper + MinIO + Postgres contending — e.g. a 7GiB CI runner) it
+      # loses the memory race and aborts (exit 1), failing `make e2e` non-deterministically. The cap
+      # keeps the single tiny derivation topic well within budget.
       - redpanda start
+      - --mode dev-container
       - --smp 1
-      - --overprovisioned
+      - --memory 1G
       - --node-id 0
       - --kafka-addr PLAINTEXT://0.0.0.0:9092
       - --advertise-kafka-addr PLAINTEXT://localhost:9092
