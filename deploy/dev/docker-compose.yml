@@ -149,6 +149,13 @@ services:
       - redpanda start
       - --smp 1
       - --overprovisioned
+      # Cap memory explicitly. Unbounded, seastar reserves a large share of host RAM (~7.6GiB on a
+      # 16GiB box) and runs with abort_on_allocation_failure=true — so when the whole stack boots at
+      # once (2 ClickHouse nodes + Keeper + MinIO + Postgres) it loses the memory race and OOM-aborts
+      # (exit 1), failing the full-stack `up`/`make e2e`. 1GiB is ample for the dev/e2e workload
+      # (one tiny single-partition topic) and makes startup deterministic under contention.
+      - --memory 1G
+      - --reserve-memory 0M
       - --node-id 0
       - --kafka-addr PLAINTEXT://0.0.0.0:9092
       - --advertise-kafka-addr PLAINTEXT://localhost:9092

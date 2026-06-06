@@ -221,7 +221,9 @@ def pg_app(org_id: str) -> psycopg.Connection:
     """App-role connection with the RLS GUC set — mirrors how the API scopes every tenant query."""
     conn = psycopg.connect(CONFIG.pg_app_dsn, row_factory=dict_row, autocommit=True)
     with conn.cursor() as cur:
-        cur.execute("SET app.current_org = %s", (org_id,))
+        # `SET` doesn't accept bind params; set_config does. is_local=false → session-scoped (this
+        # connection is autocommit, so a LOCAL setting wouldn't outlive the SET statement).
+        cur.execute("SELECT set_config('app.current_org', %s, false)", (org_id,))
     return conn
 
 

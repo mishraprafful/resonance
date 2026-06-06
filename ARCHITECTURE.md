@@ -483,7 +483,13 @@ Redpanda-backed, autoscaled derivation workers.
   RLS**, RBAC 403/200, token/session/dev-open principals, quota 413, rate-limit 429, browser-auth
   lifecycle). `test_deferred.py` keeps skipped placeholders for the Phase 5 deferrals (storage
   tiering; system-metrics path, #10). `scripts/dev.sh` gained `DEV_SERVICES` so the suite/CI start
-  the backend services without the web/vite bring-up. Retries are confined to readiness/async waits
-  (`wait_until`); tests run serially for predictable rate-budget/ordering. NOTE: the per-org
-  `rate_limit_per_min` column is not yet wired into `resolve_org` (it uses the global default), so
-  the 429 test bursts past the default on a dedicated, window-aligned org.
+  the backend services without the web/vite bring-up (and a `PYTHON` override + `run.sh` auto-pick of
+  a wheels-supported interpreter, since the newest CPython lacks numpy/soundfile/numba wheels).
+  Retries are confined to readiness/async waits (`wait_until`); tests run serially for predictable
+  rate-budget/ordering. **Verified green end-to-end** on the live stack (`make e2e` from a clean
+  slate: 23 passed, 2 skipped, ~10s warm). NOTE: the per-org `rate_limit_per_min` column is not yet
+  wired into `resolve_org` (it uses the global default), so the 429 test bursts past the default on a
+  dedicated, window-aligned org. **GOTCHA found + fixed by this suite:** unbounded Redpanda reserves
+  ~7.6GiB and runs `abort_on_allocation_failure=true`, so on a full-stack `up` (2 ClickHouse nodes +
+  Keeper + MinIO + Postgres all contending) it lost the memory race and OOM-aborted (exit 1), failing
+  `make e2e` non-deterministically — capped it to `--memory 1G --reserve-memory 0M` in dev compose.

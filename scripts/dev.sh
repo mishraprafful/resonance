@@ -84,7 +84,9 @@ venv() {
     echo "==> existing venv is broken (project dir moved?) — recreating"
     rm -rf "$VENV"
   fi
-  [ -d "$VENV" ] || python3 -m venv "$VENV"
+  # Interpreter for the venv. Override with PYTHON=... (e.g. when the system python3 is too new for
+  # the scientific-stack wheels — numpy/soundfile/numba — which lag the newest CPython release).
+  [ -d "$VENV" ] || "${PYTHON:-python3}" -m venv "$VENV"
   "$VENV/bin/pip" install -q --upgrade pip
   "$VENV/bin/pip" install -q -e "$ROOT/sdk[audio]" -e "$ROOT/services/api" -e "$ROOT/workers" "uvicorn[standard]"
   if _want web && [ ! -d "$ROOT/web/node_modules" ]; then

@@ -19,6 +19,16 @@ PY="$VENV/bin/python"
 # E2E needs the backend services only — skip the web/vite bring-up (and its npm install).
 export DEV_SERVICES="${DEV_SERVICES:-ingest media api worker}"
 
+# Pick a venv interpreter the scientific-stack wheels actually support. The newest CPython (e.g.
+# 3.14) often has no prebuilt numpy/soundfile/numba wheels yet, so a bare `python3` venv fails to
+# install. Prefer a known-good version if PYTHON isn't already set; CI pins 3.11 via setup-python.
+if [ -z "${PYTHON:-}" ]; then
+  for cand in python3.12 python3.11 python3.13 python3; do
+    if command -v "$cand" >/dev/null 2>&1; then export PYTHON="$cand"; break; fi
+  done
+fi
+echo "==> using python: ${PYTHON:-python3} ($(${PYTHON:-python3} --version 2>&1))"
+
 # Service endpoints (match scripts/dev.sh defaults; the suite reads the E2E_* equivalents).
 API_PORT="${API_PORT:-8000}"
 INGEST_HTTP_PORT="${INGEST_HTTP_PORT:-18080}"
