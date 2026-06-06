@@ -118,11 +118,27 @@ async function post<T>(path: string, body?: unknown, method = "POST"): Promise<T
   return res.json() as Promise<T>;
 }
 
+async function del(path: string): Promise<void> {
+  const res = await fetch(path, { method: "DELETE", credentials: "same-origin" });
+  if (!res.ok) {
+    let detail = `${res.status}`;
+    try {
+      detail = (await res.json()).detail ?? detail;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, detail);
+  }
+}
+
 // Client-side memo of presigned URLs (the server also caches in Redis). Keyed by sha+kind.
 const _urlCache = new Map<string, Promise<string>>();
 
 export const api = {
   projects: () => get<Project[]>("/v1/projects"),
+  createProject: (slug: string, name: string) =>
+    post<Project>("/v1/projects", { slug, name }),
+  deleteProject: (slug: string) => del(`/v1/projects/${slug}`),
   runs: (projectSlug: string) => get<Run[]>(`/v1/projects/${projectSlug}/runs`),
   run: (runId: string) => get<Run>(`/v1/runs/${runId}`),
   metricNames: (runId: string) =>
@@ -185,6 +201,7 @@ export const api = {
   switchTeam: (org_id: string) => post<{ current_org: string }>("/v1/auth/switch-team", { org_id }),
   listTeams: () => get<{ teams: { id: string; slug: string; name: string }[] }>("/v1/teams").then((r) => r.teams),
   createTeam: (slug: string, name: string) => post<{ org_id: string }>("/v1/teams", { slug, name }),
+  deleteTeam: (orgId: string) => del(`/v1/teams/${orgId}`),
   requestJoin: (orgId: string) => post<{ status: string }>(`/v1/teams/${orgId}/join-request`),
   listRequests: (orgId: string) =>
     get<{ requests: { id: string; username: string; status: string }[] }>(`/v1/teams/${orgId}/requests`).then((r) => r.requests),

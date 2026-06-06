@@ -21,27 +21,95 @@ services:
       timeout: 3s
       retries: 10
 
-  # --- Metrics plane ---
-  clickhouse:
+  # --- Metrics plane (sharded ClickHouse cluster) ---
+  # Coordination for ReplicatedMergeTree + ON CLUSTER DDL (the ZooKeeper replacement).
+  clickhouse-keeper:
     image: clickhouse/clickhouse-server:24.8-alpine
+    entrypoint: ["/usr/bin/clickhouse", "keeper", "--config-file=/etc/clickhouse-keeper/keeper_config.xml"]
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    volumes:
+      - ./.data/clickhouse-keeper:/var/lib/clickhouse
+      - ./clickhouse/keeper/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9182/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Shard 1.
+  clickhouse-01:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    depends_on:
+      clickhouse-keeper:
+        condition: service_started
     environment:
       CLICKHOUSE_DB: resonance
       CLICKHOUSE_USER: resonance
       CLICKHOUSE_PASSWORD: resonance
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     ports:
-      - "8123:8123"   # HTTP
+      - "8123:8123"   # HTTP  (control API + ingest target this node; Distributed routes to shards)
       - "9000:9000"   # native
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
     volumes:
-      - ./.data/clickhouse:/var/lib/clickhouse
-      - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./.data/clickhouse-01:/var/lib/clickhouse
+      - ./clickhouse/config.d/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+      - ./clickhouse/config.d/macros-01.xml:/etc/clickhouse-server/config.d/macros.xml:ro
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Shard 2.
+  clickhouse-02:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    depends_on:
+      clickhouse-keeper:
+        condition: service_started
+    environment:
+      CLICKHOUSE_DB: resonance
+      CLICKHOUSE_USER: resonance
+      CLICKHOUSE_PASSWORD: resonance
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "8124:8123"   # HTTP  (exposed for verifying shard distribution directly)
+      - "9002:9000"   # native
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    volumes:
+      - ./.data/clickhouse-02:/var/lib/clickhouse
+      - ./clickhouse/config.d/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+      - ./clickhouse/config.d/macros-02.xml:/etc/clickhouse-server/config.d/macros.xml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot: create the database + _local (Replicated) and Distributed tables ON CLUSTER once both
+  # nodes + Keeper are reachable. Retries the DDL until the cluster is ready (initdb can't run it
+  # because ON CLUSTER needs every node up).
+  clickhouse-init:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    depends_on:
+      clickhouse-01:
+        condition: service_healthy
+      clickhouse-02:
+        condition: service_healthy
+    volumes:
+      - ./clickhouse/init.sql:/init.sql:ro
+    entrypoint: >
+      /bin/sh -c "
+      echo 'waiting for clickhouse nodes...';
+      until clickhouse-client --host clickhouse-01 --user resonance --password resonance --query 'SELECT 1' >/dev/null 2>&1; do sleep 2; done;
+      until clickhouse-client --host clickhouse-02 --user resonance --password resonance --query 'SELECT 1' >/dev/null 2>&1; do sleep 2; done;
+      echo 'applying cluster DDL...';
+      until clickhouse-client --host clickhouse-01 --user resonance --password resonance --multiquery < /init.sql; do echo 'cluster not ready, retrying DDL'; sleep 2; done;
+      echo 'clickhouse cluster schema ready';
+      "
 
   # --- Audio/blob plane ---
   minio:

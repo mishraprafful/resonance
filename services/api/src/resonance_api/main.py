@@ -7,15 +7,15 @@ Tenant-scoped by org_id on every query. Phase 1 (W&B-parity baseline).
 from __future__ import annotations
 
 import json
-
+import re
 import secrets
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from psycopg.types.json import Json
 from pydantic import BaseModel
 
 from . import auth_routes, clickhouse, db, media, queue, storage
-from .auth import Principal, principal, resolve_org, token_hash
+from .auth import Principal, principal, require_role, resolve_org, token_hash
 from .models import (
     AssetPrepareRequest,
     AssetPrepareResponse,
@@ -34,6 +34,7 @@ from .models import (
     OrgCreated,
     PresignResponse,
     Project,
+    ProjectCreate,
     Rating,
     RatingCreate,
     Run,
@@ -88,6 +89,49 @@ def list_projects(org_id: str = Depends(resolve_org)) -> list[Project]:
             "SELECT * FROM projects WHERE org_id = %s ORDER BY created_at DESC", (org_id,)
         )
         return [Project(**_stringify_ids(r)) for r in cur.fetchall()]
+
+
+@app.post("/v1/projects", response_model=Project, status_code=201)
+def create_project(
+    body: ProjectCreate,
+    org_id: str = Depends(resolve_org),
+    _: Principal = Depends(require_role("member")),
+) -> Project:
+    """Create a project in the active tenant. Runs still create projects on demand at log time;
+    this lets the UI create an empty project up front (e.g. a freshly created team)."""
+    # URL-safe slug (matches the web client's slugify): lowercase, non-alphanumerics -> '-', trimmed.
+    slug = re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", body.slug.strip().lower())).strip("-")
+    if not slug:
+        raise HTTPException(status_code=422, detail="slug is required")
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM projects WHERE org_id = %s AND slug = %s", (org_id, slug)
+        )
+        if cur.fetchone():
+            raise HTTPException(status_code=409, detail="a project with that slug already exists")
+        cur.execute(
+            "INSERT INTO projects (org_id, slug, name) VALUES (%s, %s, %s) RETURNING *",
+            (org_id, slug, body.name or slug),
+        )
+        return Project(**_stringify_ids(cur.fetchone()))
+
+
+@app.delete("/v1/projects/{slug}", status_code=204)
+def delete_project(
+    slug: str,
+    org_id: str = Depends(resolve_org),
+    _: Principal = Depends(require_role("admin")),
+) -> Response:
+    """Permanently delete a project and everything under it (runs, audio logs, dataset versions
+    cascade via FKs). Content-addressed assets are org-level/deduped and are intentionally left in
+    place; ClickHouse metric rows for the deleted runs are orphaned (swept by retention TTL)."""
+    with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM projects WHERE org_id = %s AND slug = %s RETURNING id", (org_id, slug)
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="project not found")
+    return Response(status_code=204)
 
 
 # --- runs ---

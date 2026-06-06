@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<!-- Identity of shard 1. {shard}/{replica} are substituted into the ReplicatedMergeTree zk path. -->
+<clickhouse>
+    <macros>
+        <shard>01</shard>
+        <replica>clickhouse-01</replica>
+    </macros>
+</clickhouse>

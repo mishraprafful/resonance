@@ -1,13 +1,14 @@
-"""End-to-end demo: log several fake training runs (across multiple projects) to Resonance.
+"""End-to-end demo: log several fake training runs into one project on Resonance.
 
 Offline (default) spools to ./.resonance. Online streams to a running stack:
 
     make up                            # full local stack + services + UI
     RESONANCE_MODE=online python examples/train_demo.py   # (or: make demo)
 
-Each project trains a different "vocoder" toward the SAME 440 Hz reference, logging full-length
-(≥3 min) audio samples per step — so the Compare view has cross-project, cross-run material to
-A/B at original quality, and the shared reference exercises cross-project dedup.
+All runs land in a single project (``test-project`` by default, override with DEMO_PROJECT); the
+project is created on demand at init. Each run trains a different "vocoder" toward the SAME 440 Hz
+reference, logging full-length (≥3 min) audio samples per step — so the Compare view has cross-run
+material to A/B at original quality, and the shared reference exercises dedup.
 """
 
 from __future__ import annotations
@@ -27,13 +28,16 @@ AUDIO_SECONDS = float(os.environ.get("DEMO_AUDIO_SECONDS", "180"))
 # Audio samples per run (each is its own ≥3-min clip).
 N_SAMPLES = int(os.environ.get("DEMO_SAMPLES", "4"))
 
-# A few projects, each a different model converging to the same reference. Trim with DEMO_PROJECTS.
-PROJECTS: list[tuple[str, dict]] = [
+# Everything lands in one project (created on demand at init); override the name with DEMO_PROJECT.
+PROJECT = os.environ.get("DEMO_PROJECT", "test-project")
+
+# A few runs, each a different model converging to the same reference. Trim with DEMO_RUNS.
+RUNS: list[tuple[str, dict]] = [
     ("hifigan-vocoder", {"model": "hifigan", "lr": 3e-4}),
     ("diffwave-vocoder", {"model": "diffwave", "lr": 2e-4}),
     ("bigvgan-vocoder", {"model": "bigvgan", "lr": 1e-4}),
 ]
-N_PROJECTS = int(os.environ.get("DEMO_PROJECTS", str(len(PROJECTS))))
+N_RUNS = int(os.environ.get("DEMO_RUNS", str(len(RUNS))))
 
 
 def _tone(freq: float, seconds: float = AUDIO_SECONDS, noise: float = 0.0) -> np.ndarray:
@@ -46,10 +50,10 @@ def _tone(freq: float, seconds: float = AUDIO_SECONDS, noise: float = 0.0) -> np
     return sig.astype(np.float32)
 
 
-def train_project(project: str, config: dict, reference: np.ndarray, offset: float) -> str:
-    run = resonance.init(project=project, config=config)
+def train_run(run_name: str, config: dict, reference: np.ndarray, offset: float) -> str:
+    run = resonance.init(project=PROJECT, config=config, name=run_name)
     mb = SR * AUDIO_SECONDS * 2 / 1e6  # ~16-bit PCM WAV size estimate
-    print(f"[{project}] run {run.id} ({run.settings.mode}); "
+    print(f"[{PROJECT}/{run_name}] run {run.id} ({run.settings.mode}); "
           f"{N_SAMPLES} clips of {AUDIO_SECONDS:.0f}s (~{mb:.0f} MB each)")
 
     steps = 200
@@ -83,17 +87,17 @@ def main() -> None:
         d = tempfile.mkdtemp(prefix="resonance-dataset-")
         for i, f in enumerate([330.0, 440.0, 550.0]):
             sf.write(f"{d}/clip_{i}.wav", _tone(f, seconds=2.0), SR)
-        seed = resonance.init(project=PROJECTS[0][0], config={"role": "dataset-seed"})
+        seed = resonance.init(project=PROJECT, config={"role": "dataset-seed"}, name="dataset-seed")
         seed.log_dataset("valset", d)
         seed.finish()
         print(f"logged dataset 'valset' (3 clips) from {d}")
     except Exception as exc:  # soundfile optional
         print(f"dataset step skipped: {exc!r}")
 
-    for i, (project, config) in enumerate(PROJECTS[:N_PROJECTS]):
-        train_project(project, config, reference, offset=40.0 + 30.0 * i)
+    for i, (run_name, config) in enumerate(RUNS[:N_RUNS]):
+        train_run(run_name, config, reference, offset=40.0 + 30.0 * i)
 
-    print(f"done — {min(N_PROJECTS, len(PROJECTS))} projects")
+    print(f"done — {min(N_RUNS, len(RUNS))} runs in project '{PROJECT}'")
 
 
 if __name__ == "__main__":

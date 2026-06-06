@@ -143,6 +143,9 @@ func (s *Sink) insert(rows []Row) error {
 	q := url.Values{}
 	q.Set("database", s.cfg.Database)
 	q.Set("query", "INSERT INTO metrics FORMAT JSONEachRow")
+	// `metrics` is a Distributed table: route rows to the owning shard synchronously so a read
+	// immediately after an insert sees them on the right node (no-op on a single-node target).
+	q.Set("insert_distributed_sync", "1")
 	if s.cfg.User != "" {
 		q.Set("user", s.cfg.User)
 	}

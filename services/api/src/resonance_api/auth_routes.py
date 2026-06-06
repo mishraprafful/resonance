@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from . import accounts, db
 from .accounts import CurrentUser, current_user
 from .models import Credentials, SignupRequest, SwitchTeam, TeamCreate
+from .settings import settings
 
 router = APIRouter()
 
@@ -35,11 +36,19 @@ def _set_cookie(resp: Response, token: str) -> None:
 
 
 def _memberships(cur, user_id: str) -> list[dict]:
-    cur.execute(
-        "SELECT o.id, o.slug, o.name, m.role FROM org_members m "
-        "JOIN orgs o ON o.id = m.org_id WHERE m.user_id = %s ORDER BY o.name",
-        (user_id,),
-    )
+    if _is_platform_admin(cur, user_id):
+        # Platform admins implicitly see every team (their real role where they have one, else owner).
+        cur.execute(
+            "SELECT o.id, o.slug, o.name, COALESCE(m.role, 'owner') AS role FROM orgs o "
+            "LEFT JOIN org_members m ON m.org_id = o.id AND m.user_id = %s ORDER BY o.name",
+            (user_id,),
+        )
+    else:
+        cur.execute(
+            "SELECT o.id, o.slug, o.name, m.role FROM org_members m "
+            "JOIN orgs o ON o.id = m.org_id WHERE m.user_id = %s ORDER BY o.name",
+            (user_id,),
+        )
     return [
         {"org_id": str(r["id"]), "slug": r["slug"], "name": r["name"], "role": r["role"]}
         for r in cur.fetchall()
@@ -190,7 +199,12 @@ def me(u: CurrentUser = Depends(current_user)) -> dict:
 def switch_team(body: SwitchTeam, u: CurrentUser = Depends(current_user)) -> dict:
     with db.connection() as c, c.cursor() as cur:
         if not _role_in_org(cur, u.user_id, body.org_id):
-            raise HTTPException(status_code=403, detail="not a member of that team")
+            # Platform admins may switch into any team; everyone else must be a member.
+            if not _is_platform_admin(cur, u.user_id):
+                raise HTTPException(status_code=403, detail="not a member of that team")
+            cur.execute("SELECT 1 FROM orgs WHERE id = %s", (body.org_id,))
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="team not found")
     accounts.update_session(u.token, current_org=body.org_id)
     return {"current_org": body.org_id}
 
@@ -278,3 +292,24 @@ def decide_request(org_id: str, req_id: str, action: str,
             ("approved" if action == "approve" else "denied", req_id),
         )
     return {"status": "approved" if action == "approve" else "denied"}
+
+
+@router.delete("/v1/teams/{org_id}", status_code=204)
+def delete_team(org_id: str, u: CurrentUser = Depends(current_user)) -> Response:
+    """Permanently delete a team and everything in it — projects, runs, audio logs, datasets,
+    tokens and memberships all cascade. A team owner/admin or a platform admin may do this."""
+    with db.connection() as c, c.cursor() as cur:
+        if _role_in_org(cur, u.user_id, org_id) not in ("owner", "admin") and not _is_platform_admin(cur, u.user_id):
+            raise HTTPException(status_code=403, detail="requires team admin")
+        cur.execute("SELECT slug FROM orgs WHERE id = %s", (org_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="team not found")
+        if row["slug"] == settings.default_org_slug:
+            # The default org backs token-less dev-open access; deleting it would break the stack.
+            raise HTTPException(status_code=400, detail="the default org cannot be deleted")
+        cur.execute("DELETE FROM orgs WHERE id = %s", (org_id,))
+    # If the caller was scoped to the team they just deleted, drop the dangling active-org pointer.
+    if u.current_org == org_id:
+        accounts.update_session(u.token, current_org=None)
+    return Response(status_code=204)
