@@ -146,16 +146,17 @@ services:
   redpanda:
     image: redpandadata/redpanda:latest
     command:
+      # `--mode dev-container` is Redpanda's purpose-built profile for resource-constrained
+      # containers: it implies --overprovisioned, sets a small reserve, and bounds memory to a
+      # container-appropriate share instead of grabbing most of host RAM. Unbounded (the default
+      # mode), seastar reserves ~7.6GiB and runs abort_on_allocation_failure=true, so on a full-stack
+      # `up` (2 ClickHouse nodes + Keeper + MinIO + Postgres contending — e.g. a 7GiB CI runner) it
+      # loses the memory race and aborts (exit 1), failing `make e2e` non-deterministically. The cap
+      # keeps the single tiny derivation topic well within budget.
       - redpanda start
+      - --mode dev-container
       - --smp 1
-      - --overprovisioned
-      # Cap memory explicitly. Unbounded, seastar reserves a large share of host RAM (~7.6GiB on a
-      # 16GiB box) and runs with abort_on_allocation_failure=true — so when the whole stack boots at
-      # once (2 ClickHouse nodes + Keeper + MinIO + Postgres) it loses the memory race and OOM-aborts
-      # (exit 1), failing the full-stack `up`/`make e2e`. 1GiB is ample for the dev/e2e workload
-      # (one tiny single-partition topic) and makes startup deterministic under contention.
       - --memory 1G
-      - --reserve-memory 0M
       - --node-id 0
       - --kafka-addr PLAINTEXT://0.0.0.0:9092
       - --advertise-kafka-addr PLAINTEXT://localhost:9092

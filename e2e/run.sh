@@ -43,6 +43,13 @@ teardown() {
     echo "==> KEEP_UP set — leaving the stack + services running"
     return
   fi
+  # On failure, snapshot the docker stack logs before we tear the containers down, so the cause
+  # (e.g. a service that crashed on boot) survives in .run/ for the CI artifact + inline dump.
+  if [ "$code" -ne 0 ]; then
+    echo "==> capturing docker stack logs to .run/docker-stack.log"
+    mkdir -p "$ROOT/.run"
+    $COMPOSE logs --no-color --timestamps > "$ROOT/.run/docker-stack.log" 2>&1 || true
+  fi
   echo "==> tearing down app services + dev stack"
   DEV_SERVICES="ingest media api worker web" bash "$ROOT/scripts/dev.sh" stop >/dev/null 2>&1 || true
   if [ -n "$STARTED_STACK" ]; then
