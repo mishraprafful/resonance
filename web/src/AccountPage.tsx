@@ -1,10 +1,12 @@
 // Account & Teams: your teams (switch / active), create a team, request to join others, and — for
 // team owners/admins — approve/deny pending join requests. Wired to the real /v1/teams + auth APIs.
 import { useEffect, useState } from "react";
-import { api, type Me } from "./api";
+import { api, ApiError, type Me, type Project } from "./api";
 import { fmt } from "./design/theme";
 import { Icon } from "./design/icons";
-import { Badge, Btn, Empty, SectionLabel } from "./design/ui";
+import { Badge, Btn, ConfirmDialog, Empty, SectionLabel } from "./design/ui";
+
+interface PendingReq { orgId: string; team: string; id: string; username: string }
 
 function Field({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const [focus, setFocus] = useState(false);
@@ -15,28 +17,49 @@ function Field({ value, onChange, placeholder }: { value: string; onChange: (v: 
   );
 }
 
-export function AccountPage({ me, reload }: { me: Me; reload: () => void }) {
+export function AccountPage({ me, reload, projects = [], canManageProjects = false, onDeleteProject }: {
+  me: Me; reload: () => void; projects?: Project[]; canManageProjects?: boolean; onDeleteProject?: (p: Project) => void;
+}) {
+  const activeTeam = me.teams.find((t) => t.org_id === me.current_org);
   const [allTeams, setAllTeams] = useState<{ id: string; slug: string; name: string }[]>([]);
-  const [requests, setRequests] = useState<{ id: string; username: string; status: string }[]>([]);
+  const [pending, setPending] = useState<PendingReq[]>([]);
   const [newTeam, setNewTeam] = useState("");
+  const [delTeam, setDelTeam] = useState<{ orgId: string; name: string } | null>(null);
+  const [delBusy, setDelBusy] = useState(false);
+  const [delErr, setDelErr] = useState<string | null>(null);
   const myOrgIds = new Set(me.teams.map((t) => t.org_id));
-  const adminTeam = me.teams.find((t) => t.role === "owner" || t.role === "admin");
+  // Every team the user owns/admins is surfaced — not just the first one.
+  const adminTeams = me.teams.filter((t) => t.role === "owner" || t.role === "admin");
   const pendingSlugs = new Set(me.pending_requests.map((r) => r.slug));
 
   useEffect(() => { api.listTeams().then(setAllTeams).catch(() => {}); }, [me]);
-  useEffect(() => {
-    if (adminTeam) api.listRequests(adminTeam.org_id).then(setRequests).catch(() => setRequests([]));
-    else setRequests([]);
-  }, [adminTeam?.org_id]);
 
+  // Aggregate pending join requests across all teams the user administers.
   const refreshRequests = () => {
-    if (adminTeam) api.listRequests(adminTeam.org_id).then(setRequests).catch(() => {});
+    Promise.all(
+      me.teams
+        .filter((t) => t.role === "owner" || t.role === "admin")
+        .map((t) =>
+          api.listRequests(t.org_id)
+            .then((rs) => rs.filter((r) => r.status === "pending")
+              .map((r): PendingReq => ({ orgId: t.org_id, team: t.name, id: r.id, username: r.username })))
+            .catch(() => [] as PendingReq[]))
+    ).then((lists) => setPending(lists.flat()));
   };
-  const decide = (reqId: string, action: "approve" | "deny") => {
-    if (adminTeam) api.decideRequest(adminTeam.org_id, reqId, action).then(refreshRequests).catch(() => {});
+  useEffect(refreshRequests, [me]);
+
+  const decide = (orgId: string, reqId: string, action: "approve" | "deny") => {
+    api.decideRequest(orgId, reqId, action).then(refreshRequests).catch(() => {});
   };
 
-  const pending = requests.filter((r) => r.status === "pending");
+  const confirmDeleteTeam = () => {
+    if (!delTeam) return;
+    setDelBusy(true); setDelErr(null);
+    api.deleteTeam(delTeam.orgId)
+      .then(() => { setDelTeam(null); reload(); })
+      .catch((e) => setDelErr(e instanceof ApiError ? e.message : "could not delete team"))
+      .finally(() => setDelBusy(false));
+  };
 
   return (
     <div style={{ maxWidth: 760 }}>
@@ -72,6 +95,11 @@ export function AccountPage({ me, reload }: { me: Me; reload: () => void }) {
                 <div style={{ fontSize: 12, color: "var(--faint)", marginTop: 2 }}>{t.slug}</div>
               </div>
               {active ? <Badge tone="ok"><Icon name="check" size={11} />active</Badge> : <Btn kind="soft" onClick={() => api.switchTeam(t.org_id).then(reload)}>Switch</Btn>}
+              {(t.role === "owner" || t.role === "admin" || me.is_admin) && (
+                <Btn kind="ghost" size="sm" icon="x" title="Delete team"
+                  onClick={() => { setDelErr(null); setDelTeam({ orgId: t.org_id, name: t.name }); }}
+                  style={{ color: "var(--bad)" }}>Delete</Btn>
+              )}
             </div>
           );
         })}
@@ -109,22 +137,58 @@ export function AccountPage({ me, reload }: { me: Me; reload: () => void }) {
         </div>
       </div>
 
-      {/* admin: join requests */}
-      {adminTeam && (
+      {/* manage projects (active team) — delete lives here, not on the project cards */}
+      {canManageProjects && onDeleteProject && activeTeam && (
         <div style={{ marginTop: 28 }}>
-          <SectionLabel right={<span style={{ fontSize: 12, color: "var(--faint)" }}>{adminTeam.name} · you are {adminTeam.role}</span>}>Pending join requests</SectionLabel>
-          <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, padding: pending.length ? 8 : 0 }}>
-            {pending.length === 0 && <div style={{ padding: 24, textAlign: "center", color: "var(--faint)", fontSize: 13 }}>No pending requests.</div>}
-            {pending.map((r, i) => (
-              <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 8px", borderBottom: i < pending.length - 1 ? "1px solid var(--line-soft)" : "none" }}>
-                <span style={{ width: 32, height: 32, borderRadius: 8, background: "var(--panel-3)", color: "var(--ink)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, fontFamily: "var(--font-display)" }}>{fmt.initials(r.username)}</span>
-                <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{r.username}</span>
-                <Btn kind="primary" size="sm" icon="check" onClick={() => decide(r.id, "approve")}>Approve</Btn>
-                <Btn kind="soft" size="sm" onClick={() => decide(r.id, "deny")}>Deny</Btn>
+          <SectionLabel right={<span style={{ fontSize: 12, color: "var(--faint)" }}>{activeTeam.name}</span>}>Manage projects</SectionLabel>
+          <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, padding: projects.length ? 8 : 0 }}>
+            {projects.length === 0 && <div style={{ padding: 24, textAlign: "center", color: "var(--faint)", fontSize: 13 }}>No projects in this team.</div>}
+            {projects.map((p, i) => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 8px", borderBottom: i < projects.length - 1 ? "1px solid var(--line-soft)" : "none" }}>
+                <span style={{ width: 32, height: 32, borderRadius: 8, background: "var(--panel-3)", color: "var(--ink)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon name="music" size={15} /></span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--faint)", fontFamily: "var(--mono)" }}>{p.slug}</div>
+                </div>
+                <Btn kind="ghost" size="sm" icon="x" onClick={() => onDeleteProject(p)} style={{ color: "var(--bad)" }}>Delete</Btn>
               </div>
             ))}
           </div>
         </div>
+      )}
+
+      {/* admin: join requests — aggregated across every team you administer */}
+      {adminTeams.length > 0 && (
+        <div style={{ marginTop: 28 }}>
+          <SectionLabel right={<span style={{ fontSize: 12, color: "var(--faint)" }}>across {adminTeams.length} team{adminTeams.length !== 1 ? "s" : ""} you manage</span>}>Pending join requests</SectionLabel>
+          <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, padding: pending.length ? 8 : 0 }}>
+            {pending.length === 0 && <div style={{ padding: 24, textAlign: "center", color: "var(--faint)", fontSize: 13 }}>No pending requests.</div>}
+            {pending.map((r, i) => (
+              <div key={`${r.orgId}:${r.id}`} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 8px", borderBottom: i < pending.length - 1 ? "1px solid var(--line-soft)" : "none" }}>
+                <span style={{ width: 32, height: 32, borderRadius: 8, background: "var(--panel-3)", color: "var(--ink)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, fontFamily: "var(--font-display)" }}>{fmt.initials(r.username)}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{r.username}</div>
+                  <div style={{ fontSize: 11, color: "var(--faint)" }}>wants to join {r.team}</div>
+                </div>
+                <Btn kind="primary" size="sm" icon="check" onClick={() => decide(r.orgId, r.id, "approve")}>Approve</Btn>
+                <Btn kind="soft" size="sm" onClick={() => decide(r.orgId, r.id, "deny")}>Deny</Btn>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {delTeam && (
+        <ConfirmDialog
+          title={`Delete ${delTeam.name}?`}
+          confirmLabel="Delete team"
+          confirmWord={delTeam.name}
+          busy={delBusy}
+          error={delErr}
+          onCancel={() => { if (!delBusy) setDelTeam(null); }}
+          onConfirm={confirmDeleteTeam}
+          message={<>This <b style={{ color: "var(--ink)" }}>permanently deletes</b> the team and <b style={{ color: "var(--ink)" }}>everything in it</b> — all projects, runs, logged audio, datasets, API tokens and memberships. This cannot be undone.</>}
+        />
       )}
     </div>
   );

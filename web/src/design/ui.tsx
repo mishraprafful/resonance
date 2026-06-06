@@ -1,6 +1,6 @@
 // Shared UI atoms: buttons, badges, status dots, tags, run chips, sparklines, stat tiles,
 // progress bars, panels, section labels, empty states, colormap swatches, and view toggles.
-import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { Icon } from "./icons";
 import { runColor } from "./theme";
 import { COLORMAPS, COLORMAP_NAMES } from "./colormaps";
@@ -175,6 +175,52 @@ export function SectionLabel({ children, right }: { children: ReactNode; right?:
 
 export function Empty({ msg }: { msg: string }) {
   return <div style={{ padding: 48, textAlign: "center", color: "var(--muted)", background: "var(--panel)", border: "1px dashed var(--line)", borderRadius: 12 }}>{msg}</div>;
+}
+
+// Modal for irreversible/destructive actions. Shows a red-accented warning; optionally requires the
+// user to type an exact word (e.g. the team name) before the Delete button enables.
+export function ConfirmDialog({ title, message, confirmLabel = "Delete", confirmWord, busy, error, onConfirm, onCancel }: {
+  title: string; message: ReactNode; confirmLabel?: string; confirmWord?: string; busy?: boolean;
+  error?: string | null; onConfirm: () => void; onCancel: () => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const armed = !confirmWord || typed.trim() === confirmWord;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+  return (
+    <div onMouseDown={onCancel}
+      style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(15,16,18,0.55)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div onMouseDown={(e) => e.stopPropagation()}
+        style={{ width: "100%", maxWidth: 440, background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 14, padding: 24, boxShadow: "var(--shadow)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <span style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0, background: "color-mix(in srgb, var(--bad) 16%, transparent)", color: "var(--bad)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Icon name="flag" size={19} />
+          </span>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 500, fontSize: 18, color: "var(--ink-strong)" }}>{title}</div>
+        </div>
+        <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.55, marginBottom: confirmWord ? 14 : 20 }}>{message}</div>
+        {confirmWord && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, color: "var(--faint)", marginBottom: 7 }}>Type <b style={{ color: "var(--ink)", fontFamily: "var(--mono)" }}>{confirmWord}</b> to confirm.</div>
+            <input value={typed} autoFocus onChange={(e) => setTyped(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && armed && !busy) onConfirm(); }}
+              style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", background: "var(--panel-2)", borderRadius: 8, padding: "10px 12px", fontSize: 14, fontFamily: "var(--mono)", color: "var(--ink)", outline: "none" }} />
+          </div>
+        )}
+        {error && <div style={{ fontSize: 12.5, color: "var(--bad)", marginBottom: 12 }}>{error}</div>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <Btn kind="soft" onClick={onCancel} disabled={busy}>Cancel</Btn>
+          <Btn kind="solid" icon="x" disabled={!armed || busy} onClick={onConfirm}
+            style={{ background: "var(--bad)", color: "#fff", opacity: !armed || busy ? 0.5 : 1 }}>
+            {busy ? "Deleting…" : confirmLabel}
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function ColormapSwatch({ map, w = 40, h = 22 }: { map: ColormapName; w?: number; h?: number }) {
