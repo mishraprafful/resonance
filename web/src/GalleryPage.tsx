@@ -50,7 +50,7 @@ export function GalleryPage({ project, colormap }: { project: Project; colormap:
           const chosen = allSteps ? entries : entries.slice(-1);
           for (const e of chosen) {
             const [url, peaks, spec] = await Promise.all([
-              api.presign(e.asset_sha, "original").catch(() => undefined),
+              api.streamUrl(e.asset_sha).catch(() => undefined),
               e.has_peaks ? api.presign(e.asset_sha, "peaks").catch(() => undefined) : Promise.resolve(undefined),
               e.has_spectrogram ? api.presign(e.asset_sha, "spectrogram").catch(() => undefined) : Promise.resolve(undefined),
             ]);

@@ -86,7 +86,8 @@ services:
       - --advertise-kafka-addr PLAINTEXT://localhost:9092
     ports:
       - "9092:9092"
-      - "9644:9644"   # admin API
+      - "9644:9644"   # admin API (consumer-group lag for autoscaling lives here)
+      - "8082:8082"   # HTTP proxy (pandaproxy) — derivation produce/consume over REST
     volumes:
       - ./.data/redpanda:/var/lib/redpanda/data
     healthcheck:
@@ -94,6 +95,22 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Pre-create the derivation topic. pandaproxy produce does NOT auto-create topics, so the explicit
+  # create is required for the fast lane to work. `rpk topic create` only honors the local broker in
+  # this image (the -X brokers/RPK_BROKERS override is ignored for create), so we share redpanda's
+  # network namespace to make localhost:9092 the broker.
+  redpanda-init:
+    image: redpandadata/redpanda:latest
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    network_mode: "service:redpanda"
+    entrypoint: >
+      /bin/sh -c "
+      rpk topic create audio.derivations -p 1 -r 1 || true;
+      echo 'derivation topic ready';
+      "
 
   # --- Cache ---
   redis:

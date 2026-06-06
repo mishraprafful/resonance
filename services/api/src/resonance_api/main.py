@@ -13,7 +13,7 @@ import secrets
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
-from . import auth_routes, clickhouse, db, storage
+from . import auth_routes, clickhouse, db, media, queue, storage
 from .auth import Principal, principal, resolve_org, token_hash
 from .models import (
     AssetPrepareRequest,
@@ -187,13 +187,18 @@ def log_audio(body: AudioLogCreate, org_id: str = Depends(resolve_org)) -> Audio
     """Register an uploaded asset (idempotent on org+sha) and a per-run audio log entry.
     A new asset is left with derived_at NULL so a worker picks it up for derivation."""
 
+    new_assets: list[tuple[str, str]] = []  # (sha, storage_key) newly inserted this request
+
     def _upsert_asset(cur, sha: str, size: int) -> None:
+        key = storage.blob_key(org_id, sha)
         cur.execute(
             "INSERT INTO assets "
             "(org_id, sha256, media_type, size_bytes, storage_key, sample_rate) "
             "VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (org_id, sha256) DO NOTHING",
-            (org_id, sha, body.media_type, size, storage.blob_key(org_id, sha), body.sample_rate),
+            (org_id, sha, body.media_type, size, key, body.sample_rate),
         )
+        if cur.rowcount:  # a fresh asset (not a dedup hit) needs derivation
+            new_assets.append((sha, key))
 
     with db.tenant_connection(org_id) as conn:
         with conn.cursor() as cur:
@@ -209,6 +214,13 @@ def log_audio(body: AudioLogCreate, org_id: str = Depends(resolve_org)) -> Audio
                  body.reference_sha, body.caption),
             )
             audio_log_id = str(cur.fetchone()["id"])
+
+    # Event-driven derivation: enqueue the new assets so workers process on queue depth. Best-effort
+    # — the asset rows are already persisted with derived_at NULL, so the worker's poll backstop
+    # derives them even if the queue is down or unconfigured. Published after commit so a consumer
+    # never races ahead of the committed row.
+    for sha, key in new_assets:
+        queue.publish_derivation(org_id, sha, key)
     return AudioLogEntry(
         id=audio_log_id, key=body.key, step=body.step, caption=body.caption,
         asset_sha=body.asset_sha, reference_sha=body.reference_sha,
@@ -281,27 +293,45 @@ def list_audio(
     return AudioPage(items=items, next_cursor=next_cursor)
 
 
+def _resolve_asset_key(org_id: str, sha: str, kind: str) -> str:
+    """Map (asset, kind) -> object-store key. `original` is the exact uploaded bytes; peaks/
+    spectrogram come from the worker's recorded derivation keys."""
+    if kind == "original":
+        return storage.blob_key(org_id, sha)
+    if kind in ("peaks", "spectrogram"):
+        with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT derivations FROM assets WHERE org_id = %s AND sha256 = %s", (org_id, sha)
+            )
+            row = cur.fetchone()
+        key = ((row or {}).get("derivations") or {}).get(f"{kind}_key")
+        if not key:
+            raise HTTPException(status_code=404, detail=f"{kind} not available for asset")
+        return key
+    raise HTTPException(status_code=400, detail="kind must be original|peaks|spectrogram")
+
+
 @app.get("/v1/assets/{sha}/url", response_model=PresignResponse)
 def presign_asset(
     sha: str, kind: str = "original", org_id: str = Depends(resolve_org)
 ) -> PresignResponse:
     """Mint a (Redis-cached) presigned GET URL on demand. `original` always serves the exact
     uploaded bytes — comparison plays original quality, never a lossy rendition."""
-    if kind == "original":
-        key = storage.blob_key(org_id, sha)
-    elif kind in ("peaks", "spectrogram"):
-        with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT derivations FROM assets WHERE org_id = %s AND sha256 = %s", (org_id, sha)
-            )
-            row = cur.fetchone()
-        deriv = (row or {}).get("derivations") or {}
-        key = deriv.get(f"{kind}_key")
-        if not key:
-            raise HTTPException(status_code=404, detail=f"{kind} not available for asset")
-    else:
-        raise HTTPException(status_code=400, detail="kind must be original|peaks|spectrogram")
+    key = _resolve_asset_key(org_id, sha, kind)
     return PresignResponse(sha256=sha, kind=kind, url=storage.presign_get(key))
+
+
+@app.get("/v1/assets/{sha}/stream-url", response_model=PresignResponse)
+def stream_asset(
+    sha: str, kind: str = "original", org_id: str = Depends(resolve_org)
+) -> PresignResponse:
+    """Auth-scoped streaming URL for range playback. When the media gateway is configured the URL
+    points at it (HMAC-signed, CDN-cacheable, bytes never transit this control plane); otherwise it
+    falls back to a direct presigned object-store GET so playback works with no gateway running.
+    Always serves the ORIGINAL quality on the compare path — never a lossy rendition (§7b)."""
+    key = _resolve_asset_key(org_id, sha, kind)
+    url = media.stream_url(key) if media.enabled() else storage.presign_get(key)
+    return PresignResponse(sha256=sha, kind=kind, url=url)
 
 
 # --- listening-test ratings (A/B compare) ---

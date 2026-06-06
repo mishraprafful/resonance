@@ -30,6 +30,18 @@ class Settings:
     redis_url: str = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     audio_page_size: int = int(os.environ.get("RESONANCE_AUDIO_PAGE_SIZE", "50"))
 
+    # Media gateway (Go). When MEDIA_PUBLIC_URL is set, audio originals are streamed through the
+    # auth-scoped, CDN-frontable gateway (HMAC-signed URLs); otherwise we fall back to a direct
+    # presigned object-store GET (no gateway running). The signing secret must match the gateway's.
+    media_gateway_url: str = os.environ.get("MEDIA_PUBLIC_URL", "")
+    media_signing_secret: str = os.environ.get("MEDIA_SIGNING_SECRET", "resonance-dev-media-secret")
+
+    # Stream queue (Redpanda via its HTTP proxy / pandaproxy). When set, new-asset registration
+    # publishes a derivation job so workers process event-driven instead of only DB-polling. The
+    # worker keeps a Postgres poll as a correctness backstop, so this is best-effort.
+    pandaproxy_url: str = os.environ.get("PANDAPROXY_URL", "")
+    derivation_topic: str = os.environ.get("DERIVATION_TOPIC", "audio.derivations")
+
     # Multi-tenancy. dev_open: when no Bearer token is supplied, fall back to the default org as an
     # owner (local-dev convenience). Set RESONANCE_DEV_OPEN=false to require tokens (prod posture).
     dev_open: bool = os.environ.get("RESONANCE_DEV_OPEN", "true").lower() == "true"

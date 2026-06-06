@@ -205,7 +205,7 @@ function ABPlayer({ runs, colormap }: { runs: EnrichedRun[]; colormap: ColormapN
           const entries = await fetchAllEntries(r.id, keyName);
           const e: AudioEntry | undefined = entries[entries.length - 1];
           if (!e) continue;
-          const url = await api.presign(e.asset_sha, "original");
+          const url = await api.streamUrl(e.asset_sha);
           const peaks = e.has_peaks ? await api.presign(e.asset_sha, "peaks").catch(() => undefined) : undefined;
           const spec = e.has_spectrogram ? await api.presign(e.asset_sha, "spectrogram").catch(() => undefined) : undefined;
           const id = `t${uid++}`;
@@ -377,7 +377,7 @@ function PromptGrid({ runs, colormap }: { runs: EnrichedRun[]; colormap: Colorma
           const entries = await fetchAllEntries(r.id, keyName);
           const e = entries[entries.length - 1];
           if (!e) continue;
-          const url = await api.presign(e.asset_sha, "original");
+          const url = await api.streamUrl(e.asset_sha);
           const peaks = e.has_peaks ? await api.presign(e.asset_sha, "peaks").catch(() => undefined) : undefined;
           const spec = e.has_spectrogram ? await api.presign(e.asset_sha, "spectrogram").catch(() => undefined) : undefined;
           built.push({ uid: r.id, runId: r.id, label: r.display_name ?? r.id.slice(0, 8), sha: e.asset_sha, url, peaks, spec, step: e.step, muted: false });

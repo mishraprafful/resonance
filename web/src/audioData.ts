@@ -58,6 +58,10 @@ export interface EntryUrls {
 const softPresign = (sha: string, kind: "original" | "peaks" | "spectrogram") =>
   api.presign(sha, kind).catch(() => undefined);
 
+// Playback (original quality) goes through the media gateway when configured — range-streamed,
+// CDN-cacheable; falls back to a direct presigned GET server-side. Peaks/spectrogram stay on presign.
+const softStream = (sha: string) => api.streamUrl(sha).catch(() => undefined);
+
 export function useEntryUrls(entry: AudioEntry | null | undefined): EntryUrls {
   const [urls, setUrls] = useState<EntryUrls>({});
   useEffect(() => {
@@ -69,8 +73,8 @@ export function useEntryUrls(entry: AudioEntry | null | undefined): EntryUrls {
     const ref = entry.reference_sha;
     (async () => {
       const [audio, reference, peaks, spectrogram, refPeaks, refSpectrogram] = await Promise.all([
-        softPresign(entry.asset_sha, "original"),
-        ref ? softPresign(ref, "original") : Promise.resolve(undefined),
+        softStream(entry.asset_sha),
+        ref ? softStream(ref) : Promise.resolve(undefined),
         entry.has_peaks ? softPresign(entry.asset_sha, "peaks") : Promise.resolve(undefined),
         entry.has_spectrogram ? softPresign(entry.asset_sha, "spectrogram") : Promise.resolve(undefined),
         ref ? softPresign(ref, "peaks") : Promise.resolve(undefined),

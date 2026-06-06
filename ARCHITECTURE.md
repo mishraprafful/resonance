@@ -309,9 +309,24 @@ Redpanda-backed, autoscaled derivation workers.
   browser users. Web: auth gate + bootstrap/login/signup screens + Account/Teams page. *Exit met:*
   bootstrap→admin, signup-create→owner, signup-join→pending→approve→member, session data scoped per
   active team (Acme sees 0 of Dev's projects), dev-open still serves the SDK.
-- [ ] **Phase 5 — Scale & ops (+ Phase 4 deferrals):** SSO/OIDC login, tiered storage lifecycle +
+- [~] **Phase 5 — Scale & ops (+ Phase 4 deferrals):** SSO/OIDC login, tiered storage lifecycle +
   CDN, ClickHouse sharding, autoscaling, retention/lifecycle automation,
   observability (OTel/Prometheus/Grafana), Helm/Terraform/ArgoCD, load tests.
+  - [x] **Go media/streaming gateway + CDN-frontable playback** (closes the Phase 2/3/4 deferral):
+    stateless Go gateway range-streams content-addressed originals from the object store; the control
+    API mints short-lived **HMAC-signed** URLs (`/v1/assets/{sha}/stream-url`, shared secret) so
+    streaming is auth-scoped without the gateway touching the DB, and **audio bytes never transit the
+    Python control plane**. Immutable `Cache-Control` (keys are content-addressed) makes the path
+    CDN-cacheable. Falls back to a direct presigned GET when `MEDIA_PUBLIC_URL` is unset. Always serves
+    **original quality** on the compare path (§7b). Web compare/audio/datasets views use it.
+  - [x] **Event-driven derivation queue** (foundation for lag-based worker autoscaling): the API
+    publishes a job to **Redpanda** (via pandaproxy REST) on new-asset registration; workers consume
+    a consumer group (KEDA/HPA can scale on group lag). **Best-effort** — the worker keeps the
+    Postgres `derived_at IS NULL` poll as a correctness backstop, so a dropped/undelivered message
+    never loses work, and derivation is idempotent across both paths.
+  - [ ] Remaining: SSO/OIDC, tiered storage lifecycle automation, ClickHouse sharding, the actual
+    autoscaling manifests (HPA/KEDA), retention automation, observability (OTel/Prometheus/Grafana),
+    Helm/Terraform/ArgoCD, load tests.
 
 ---
 
@@ -408,3 +423,23 @@ Redpanda-backed, autoscaled derivation workers.
   as-is), audio plays from presigned **original**-quality URLs. A **Tweaks** panel (⌘.) persists
   theme/accent/colormap/chart-style/density/nav/runs-view to localStorage. Web typechecks (strict) +
   builds clean; dev server serves 200.
+- **2026-06-06:** Phase 5 first slice landed + verified end-to-end against the live stack — **Go
+  media/streaming gateway** and **event-driven derivation queue**. (1) Media gateway:
+  `services/media` (`gateway` + stdlib SigV4 `objstore` packages), stateless, range-proxies
+  content-addressed originals; the control API mints short-lived HMAC-signed URLs
+  (`/v1/assets/{sha}/stream-url`) the gateway verifies (shared secret) — bytes never transit the
+  Python plane, immutable `Cache-Control` makes it CDN-cacheable, direct-presign fallback when
+  `MEDIA_PUBLIC_URL` is unset; web compare/audio/datasets use `streamUrl`. (2) Event-driven
+  derivation: API publishes to Redpanda (pandaproxy REST) on new-asset registration; the worker runs
+  a REST consumer (group `resonance-derivers`) **and** keeps the Postgres `derived_at IS NULL` poll
+  as a correctness backstop — best-effort publish, idempotent derivation across both paths. Verified
+  on a fresh stack: 3 `/v1/audio` → group offset 0→4, **LAG 0**, 4 assets derived; `stream-url`
+  resolves to the gateway, full GET 200 (`audio/wav`, immutable, `Accept-Ranges`), ranged GET 206
+  (`Content-Range bytes 0-99/176444`), tampered/expired sig → 403, streamed bytes a valid WAV. All
+  Python (api 4, workers 7) + Go (gateway/objstore) suites green; web typechecks. GOTCHA fixed:
+  pandaproxy produce does **not** auto-create topics and `rpk topic create` ignores the
+  `-X brokers`/`RPK_BROKERS` override in the redpanda image (dials localhost) — the `redpanda-init`
+  topic-create now runs in redpanda's network namespace (`network_mode: service:redpanda`) so the
+  default localhost broker is the cluster. DEFERRED (rest of Phase 5): SSO/OIDC, tiered lifecycle
+  automation, ClickHouse sharding, HPA/KEDA autoscaling manifests, retention automation, observability
+  (OTel/Prometheus/Grafana), Helm/Terraform/ArgoCD, load tests.

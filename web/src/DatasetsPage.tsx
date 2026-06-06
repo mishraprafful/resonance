@@ -86,7 +86,7 @@ function DatasetItemCard({ sha, path, size }: { sha: string; path: string; size?
   const { playing, toggle } = useAudioPlayer(url);
   useEffect(() => {
     let alive = true;
-    api.presign(sha, "original").then((u) => alive && setUrl(u)).catch(() => {});
+    api.streamUrl(sha).then((u) => alive && setUrl(u)).catch(() => {});
     return () => {
       alive = false;
     };
