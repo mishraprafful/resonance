@@ -130,7 +130,9 @@ function AuthScreen({ initialMode, onDone, colormap }: { initialMode: Mode; onDo
               {mode === "bootstrap" ? "Create admin & sign in" : mode === "login" ? "Log in" : "Sign up"}
             </Btn>
 
-            {mode !== "signup" && (
+            {/* The admin-bootstrap toggle is only offered on first run; once an admin exists the
+                option is gone for good (the backend also rejects bootstrap with 409). */}
+            {initialMode === "bootstrap" && mode !== "signup" && (
               <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 12, color: "var(--faint)", marginTop: 2 }}>
                 <button onClick={() => { setMode(mode === "bootstrap" ? "login" : "bootstrap"); setErr(null); }} className="res-link"
                   style={{ border: 0, background: "transparent", color: "var(--muted)", cursor: "pointer", fontSize: 12, padding: 0, fontFamily: "var(--font-body)" }}>
