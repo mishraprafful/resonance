@@ -150,6 +150,19 @@ export const api = {
     }
     return _urlCache.get(ck)!;
   },
+  // Auth-scoped streaming URL for range playback of an original. Resolves to the Go media gateway
+  // (HMAC-signed, CDN-cacheable, range-streamed) when configured, else a direct presigned GET.
+  // Always original quality — never a lossy rendition (§7b).
+  streamUrl: (sha: string): Promise<string> => {
+    const ck = `${sha}:stream`;
+    if (!_urlCache.has(ck)) {
+      _urlCache.set(
+        ck,
+        get<{ url: string }>(`/v1/assets/${sha}/stream-url?kind=original`).then((r) => r.url)
+      );
+    }
+    return _urlCache.get(ck)!;
+  },
 
   createRating: (body: Omit<Rating, "id">) => post<Rating>("/v1/ratings", body),
   ratings: (testId: string) => get<Rating[]>(`/v1/ratings?test_id=${encodeURIComponent(testId)}`),

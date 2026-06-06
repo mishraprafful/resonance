@@ -1,16 +1,22 @@
 """Resonance audio derivation worker.
 
-DB-backed work queue (Phase 2): scans `assets` for rows with `derived_at IS NULL`, downloads the
-blob from object storage, computes derivations (waveform peaks, spectrogram, probes), uploads them
-back (content-addressed), and marks the asset derived. The durable stream queue (Redpanda) replaces
-this poll loop in the scale phase.
+Two paths feed the same idempotent derivation step:
+  - **Stream (fast lane):** consume derivation jobs from Redpanda (pandaproxy REST). Event-driven,
+    so the fleet scales on consumer-group lag (KEDA/HPA). Enabled when PANDAPROXY_URL is set.
+  - **Postgres poll (backstop):** scan `assets` for rows with `derived_at IS NULL`. Guarantees every
+    asset is eventually derived even if a message is dropped, the queue is down, or it is disabled.
+
+Derivation downloads the blob, computes waveform peaks + spectrogram + probes, uploads them back
+(content-addressed), and marks the asset derived. Processing is idempotent: an already-derived asset
+is skipped, and re-deriving only overwrites identical content-addressed outputs.
 """
 
 from __future__ import annotations
 
 import io
 import os
-import time
+import signal
+import threading
 
 import boto3
 import psycopg
@@ -20,6 +26,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
 from . import audio
+from .queue import RestConsumer
 
 
 def _s3():
@@ -37,6 +44,9 @@ BUCKET = os.environ.get("S3_BUCKET", "resonance-blobs")
 DSN = os.environ.get("POSTGRES_DSN", "postgresql://resonance:resonance@localhost:5432/resonance")
 POLL_S = float(os.environ.get("WORKER_POLL_S", "1.0"))
 BATCH = int(os.environ.get("WORKER_BATCH", "16"))
+PANDAPROXY_URL = os.environ.get("PANDAPROXY_URL", "")
+DERIVATION_TOPIC = os.environ.get("DERIVATION_TOPIC", "audio.derivations")
+CONSUMER_GROUP = os.environ.get("CONSUMER_GROUP", "resonance-derivers")
 
 
 def process_asset(s3, conn, row: dict) -> None:
@@ -64,6 +74,22 @@ def process_asset(s3, conn, row: dict) -> None:
     print(f"derived {sha[:12]} ({duration:.2f}s, {channels}ch, {sr}Hz)")
 
 
+def derive_if_pending(s3, conn, org_id: str, sha: str) -> bool:
+    """Derive a single asset addressed by a stream job, skipping if it is gone or already derived
+    (idempotency — the same job may arrive via the queue and the poll backstop)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT org_id, sha256, storage_key, derived_at FROM assets "
+            "WHERE org_id = %s AND sha256 = %s",
+            (org_id, sha),
+        )
+        row = cur.fetchone()
+    if not row or row["derived_at"] is not None:
+        return False
+    process_asset(s3, conn, row)
+    return True
+
+
 def run_once(s3, conn) -> int:
     with conn.cursor() as cur:
         cur.execute(
@@ -80,18 +106,59 @@ def run_once(s3, conn) -> int:
     return len(rows)
 
 
+def consume_loop(stop: threading.Event) -> None:  # pragma: no cover - needs a live broker
+    """Fast lane: consume derivation jobs from Redpanda. Recreates the consumer on transient errors;
+    the Postgres backstop covers anything missed in between."""
+    s3 = _s3()
+    with psycopg.connect(DSN, autocommit=True, row_factory=dict_row) as conn:
+        while not stop.is_set():
+            consumer = RestConsumer(PANDAPROXY_URL, CONSUMER_GROUP, DERIVATION_TOPIC)
+            try:
+                consumer.start()
+                print(f"consuming derivation jobs from '{DERIVATION_TOPIC}' (group {CONSUMER_GROUP})")
+                while not stop.is_set():
+                    jobs = consumer.poll(timeout_ms=1000)
+                    for job in jobs:
+                        try:
+                            derive_if_pending(s3, conn, str(job["org_id"]), job["sha256"])
+                        except Exception as exc:
+                            print(f"stream derivation failed for {job.get('sha256', '?')[:12]}: {exc!r}")
+                    consumer.commit()  # advance the group offset to last-seen + 1 after processing
+            except Exception as exc:
+                print(f"consumer error (retrying): {exc!r}")
+                stop.wait(2.0)
+            finally:
+                consumer.close()  # deregister the instance so the group doesn't accumulate stragglers
+
+
 def main() -> None:  # pragma: no cover - process entrypoint
     s3 = _s3()
-    print("resonance-workers: polling for assets needing derivation")
+    stop = threading.Event()
+    consumer_thread: threading.Thread | None = None
+    if PANDAPROXY_URL:
+        consumer_thread = threading.Thread(target=consume_loop, args=(stop,))
+        consumer_thread.start()
+    else:
+        print("PANDAPROXY_URL unset — derivation runs from the Postgres poll backstop only")
+
+    # Stop cleanly on SIGTERM/SIGINT so the consumer thread can deregister its pandaproxy instance —
+    # otherwise each restart leaves a dead member in the group, starving the live one of partitions.
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, lambda *_: stop.set())
+
+    print("resonance-workers: polling for assets needing derivation (backstop)")
     with psycopg.connect(DSN, autocommit=True, row_factory=dict_row) as conn:
-        while True:
+        while not stop.is_set():
             try:
                 n = run_once(s3, conn)
             except Exception as exc:
                 print(f"poll error: {exc!r}")
                 n = 0
             if n == 0:
-                time.sleep(POLL_S)
+                stop.wait(POLL_S)
+
+    if consumer_thread:
+        consumer_thread.join(timeout=10)
 
 
 if __name__ == "__main__":  # pragma: no cover

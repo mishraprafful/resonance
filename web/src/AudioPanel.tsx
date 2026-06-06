@@ -50,8 +50,8 @@ function KeyBrowser({ runId, k }: { runId: string; k: string }) {
     let alive = true;
     (async () => {
       const [audio, reference, peaks, spectrogram] = await Promise.all([
-        api.presign(e.asset_sha, "original"),
-        e.reference_sha ? api.presign(e.reference_sha, "original") : Promise.resolve(undefined),
+        api.streamUrl(e.asset_sha),
+        e.reference_sha ? api.streamUrl(e.reference_sha) : Promise.resolve(undefined),
         e.has_peaks ? api.presign(e.asset_sha, "peaks") : Promise.resolve(undefined),
         e.has_spectrogram ? api.presign(e.asset_sha, "spectrogram") : Promise.resolve(undefined),
       ]);

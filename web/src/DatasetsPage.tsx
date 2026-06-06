@@ -17,7 +17,7 @@ export function DatasetsPage({ projects }: { projects: Project[] }) {
     setUrls({});
     // presign the first handful eagerly; the rest play on demand below
     for (const it of d.items.slice(0, 20)) {
-      api.presign(it.sha256, "original").then((u) => setUrls((m) => ({ ...m, [it.sha256]: u })));
+      api.streamUrl(it.sha256).then((u) => setUrls((m) => ({ ...m, [it.sha256]: u })));
     }
   };
 
@@ -51,7 +51,7 @@ export function DatasetsPage({ projects }: { projects: Project[] }) {
                     {urls[it.sha256] ? (
                       <audio controls src={urls[it.sha256]} style={{ width: 420 }} />
                     ) : (
-                      <button onClick={() => api.presign(it.sha256, "original").then((u) => setUrls((m) => ({ ...m, [it.sha256]: u })))}>
+                      <button onClick={() => api.streamUrl(it.sha256).then((u) => setUrls((m) => ({ ...m, [it.sha256]: u })))}>
                         load audio
                       </button>
                     )}

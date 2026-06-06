@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Local dev orchestration for Resonance: runs the app services (ingest, api, worker, web) on the
-# host against the docker dev stack. Managed via pid/log files under .run/.
+# Local dev orchestration for Resonance: runs the app services (ingest, media, api, worker, web) on
+# the host against the docker dev stack. Managed via pid/log files under .run/.
 #
 #   scripts/dev.sh venv     # create .venv and install python deps + web deps
-#   scripts/dev.sh start     # start ingest + api + worker + web (background)
+#   scripts/dev.sh start     # start ingest + media + api + worker + web (background)
 #   scripts/dev.sh stop      # stop them
 #   scripts/dev.sh status    # show what's running
 #   scripts/dev.sh logs [svc]# tail logs (all, or one of: ingest api worker web)
@@ -19,6 +19,7 @@ PY="$VENV/bin/python"
 export INGEST_HTTP_PORT="${INGEST_HTTP_PORT:-18080}"
 export API_PORT="${API_PORT:-8000}"
 export WEB_PORT="${WEB_PORT:-5280}"
+export MEDIA_PORT="${MEDIA_PORT:-8090}"
 
 # Service env — defaults line up with deploy/dev/docker-compose.yml.
 export CLICKHOUSE_URL="${CLICKHOUSE_URL:-http://localhost:8123}"
@@ -34,6 +35,14 @@ export S3_ENDPOINT="${S3_ENDPOINT:-http://localhost:9100}"
 export S3_ACCESS_KEY="${S3_ACCESS_KEY:-resonance}"
 export S3_SECRET_KEY="${S3_SECRET_KEY:-resonance-secret}"
 export S3_BUCKET="${S3_BUCKET:-resonance-blobs}"
+# Media gateway: the API mints HMAC-signed URLs (same secret) pointing at it; it range-streams
+# originals from object storage. MEDIA_PUBLIC_URL being set is what makes the API use the gateway.
+export MEDIA_SIGNING_SECRET="${MEDIA_SIGNING_SECRET:-resonance-dev-media-secret}"
+export MEDIA_PUBLIC_URL="${MEDIA_PUBLIC_URL:-http://localhost:$MEDIA_PORT}"
+# Redpanda stream queue (via HTTP proxy) for event-driven derivation; worker also polls as backstop.
+export PANDAPROXY_URL="${PANDAPROXY_URL:-http://localhost:8082}"
+export DERIVATION_TOPIC="${DERIVATION_TOPIC:-audio.derivations}"
+export CONSUMER_GROUP="${CONSUMER_GROUP:-resonance-derivers}"
 export PYTHONUNBUFFERED=1
 
 _pid_file() { echo "$RUN/$1.pid"; }
@@ -86,15 +95,21 @@ start() {
   # `make up` while it's already up is a no-op, not an error).
   _alive ingest || _preflight "$INGEST_HTTP_PORT" ingest INGEST_HTTP_PORT
   _alive api    || _preflight "$API_PORT" api API_PORT
+  _alive media  || _preflight "$MEDIA_PORT" media MEDIA_PORT
   _alive web    || _preflight "$WEB_PORT" web WEB_PORT
 
   if ! _alive ingest; then
     echo "==> building ingest gateway"
     ( cd "$ROOT/services/ingest" && go build -o "$RUN/ingest-bin" ./cmd/ingest )
   fi
+  if ! _alive media; then
+    echo "==> building media gateway"
+    ( cd "$ROOT/services/media" && go build -o "$RUN/media-bin" ./cmd/media )
+  fi
 
   echo "==> starting app services"
   _spawn ingest "$RUN/ingest-bin"
+  _spawn media  "$RUN/media-bin"
   _spawn api    "$VENV/bin/uvicorn" resonance_api.main:app --host 127.0.0.1 --port "$API_PORT"
   _spawn worker env POSTGRES_DSN="$PG_SUPER_DSN" "$PY" -m resonance_workers.main
   _spawn web    "$ROOT/web/node_modules/.bin/vite" "$ROOT/web" --port "$WEB_PORT" --strictPort
@@ -105,7 +120,7 @@ start() {
 
 stop() {
   echo "==> stopping app services"
-  for name in ingest api worker web; do
+  for name in ingest media api worker web; do
     local f; f="$(_pid_file "$name")"
     if [ -f "$f" ]; then
       local p; p="$(cat "$f")"
@@ -115,11 +130,11 @@ stop() {
       rm -f "$f"
     fi
   done
-  rm -f "$RUN/ingest-bin"
+  rm -f "$RUN/ingest-bin" "$RUN/media-bin"
 }
 
 status() {
-  for name in ingest api worker web; do
+  for name in ingest media api worker web; do
     if _alive "$name"; then echo "  $name: UP (pid $(cat "$(_pid_file "$name")"))"; else echo "  $name: down"; fi
   done
 }

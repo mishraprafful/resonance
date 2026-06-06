@@ -86,7 +86,7 @@ export function ComparePage() {
   useEffect(() => { api.projects().then(setProjects).catch(() => {}); }, []);
 
   const add = (t: Omit<Track, "uid" | "url">) =>
-    api.presign(t.sha, "original").then((url) => {
+    api.streamUrl(t.sha).then((url) => {
       const uid = `t${_uid++}`;
       setTracks((ts) => [...ts, { ...t, uid, url }]);
       setOrder((o) => [...o, uid]);
