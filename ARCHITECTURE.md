@@ -408,6 +408,21 @@ Redpanda-backed, autoscaled derivation workers.
   join→pending→approve→member, per-team data scoping: Acme 0 vs Dev 1). Web: auth gate +
   bootstrap/login/signup + Account/Teams page. Team = org; projects live under teams; users can
   belong to many teams and request to join more.
+- **2026-06-05:** Web UI redesigned on the Epidemic Sound design system (from a Claude Design
+  handoff bundle). Replaced the bare `system-ui` scaffold with a tokenized theme (`web/src/design/`:
+  `theme.ts` light/dark/density/accent tokens, `icons.tsx`, `ui.tsx` atoms, `audioviz.tsx`,
+  `tweaks.tsx`, `styles.css` + Inter/Roboto Serif fonts) and rebuilt every surface: top-nav/sidebar
+  shell with team + project switchers and user menu; runs leaderboard (sortable table + cards, eval
+  columns **derived from `eval/*` metric series**, trend sparklines, stat strip); run detail (eval
+  tiles, live metric charts, config/system/dataset rails, audio panel with key tabs → step scrub →
+  synced waveform+spectrogram → A/B output/reference); Compare (overlay charts + eval table, synced
+  A/B blind-test → `/v1/ratings`, prompt/key grid); Gallery + full-screen spectrogram focus viewer
+  (live colormap switch); Datasets; Account/Teams; split-screen Auth. **All wired to the real `/v1`
+  API** — waveforms render from `peaks.json` (no client-side decode), spectrograms from the server
+  PNG (recolored by luminance through the active colormap when pixels are CORS-readable, else shown
+  as-is), audio plays from presigned **original**-quality URLs. A **Tweaks** panel (⌘.) persists
+  theme/accent/colormap/chart-style/density/nav/runs-view to localStorage. Web typechecks (strict) +
+  builds clean; dev server serves 200.
 - **2026-06-06:** Phase 5 first slice landed + verified end-to-end against the live stack — **Go
   media/streaming gateway** and **event-driven derivation queue**. (1) Media gateway:
   `services/media` (`gateway` + stdlib SigV4 `objstore` packages), stateless, range-proxies

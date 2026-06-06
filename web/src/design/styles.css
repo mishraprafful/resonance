@@ -1,0 +1,71 @@
+:root {
+  --font-display: 'Roboto Serif', 'Times New Roman', serif;
+  --font-body: 'Inter', Helvetica, Arial, sans-serif;
+  --font-cta: 'Poppins', 'Inter', sans-serif;
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  background: #f1f0eb;
+}
+h1, h2, h3, h4 { margin: 0; }
+button { font-family: var(--font-body); }
+input, select { font-family: var(--font-body); }
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--panel-3);
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px; height: 15px;
+  border-radius: 999px;
+  background: var(--accent);
+  border: 2px solid var(--panel);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 13px; height: 13px;
+  border-radius: 999px;
+  background: var(--accent);
+  border: 2px solid var(--panel);
+  cursor: pointer;
+}
+
+.res-row { transition: background var(--dur-fast) var(--ease-out); }
+.res-row:hover { background: var(--panel-2); }
+.res-card { transition: border-color var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+.res-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.res-btn:hover { filter: brightness(0.97); }
+.res-btn[data-kind="ghost"]:hover, .res-btn[data-kind="outline"]:hover, .res-btn[data-kind="soft"]:hover { background: var(--panel-3); }
+.res-link:hover { color: var(--ink) !important; text-decoration: underline; }
+.res-pulse { animation: respulse 1.8s ease-out infinite; }
+@keyframes respulse { 0% { transform: scale(1); opacity: 0.55; } 100% { transform: scale(2.8); opacity: 0; } }
+
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.32); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.5); background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+#root { min-height: 100vh; }
+
+@media (max-width: 940px) {
+  .res-detail-grid { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 720px) {
+  .res-auth { grid-template-columns: 1fr !important; }
+  .res-auth-brand { display: none !important; }
+}
