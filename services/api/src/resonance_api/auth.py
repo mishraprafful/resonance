@@ -64,8 +64,13 @@ def principal(
                 (sess["user_id"], org),
             )
             row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=403, detail="not a member of the active team")
+            if not row:
+                # Platform admins (is_admin) implicitly have owner access to every team.
+                cur.execute("SELECT is_admin FROM users WHERE id = %s", (sess["user_id"],))
+                urow = cur.fetchone()
+                if not (urow and urow["is_admin"]):
+                    raise HTTPException(status_code=403, detail="not a member of the active team")
+                return Principal(org_id=str(org), role="owner")
         return Principal(org_id=str(org), role=row["role"])
 
     if settings.dev_open:
