@@ -324,7 +324,16 @@ Redpanda-backed, autoscaled derivation workers.
     a consumer group (KEDA/HPA can scale on group lag). **Best-effort** — the worker keeps the
     Postgres `derived_at IS NULL` poll as a correctness backstop, so a dropped/undelivered message
     never loses work, and derivation is idempotent across both paths.
-  - [ ] Remaining: SSO/OIDC, tiered storage lifecycle automation, ClickHouse sharding, the actual
+  - [x] **ClickHouse sharding** (closes the §7 "ClickHouse sharded + replicated" lever): the metrics
+    plane is now a `resonance` cluster of **2 shards** (1 replica each in dev) coordinated by
+    **ClickHouse Keeper**. Each shard holds a `*_local` **ReplicatedMergeTree**; an unsuffixed
+    **Distributed** table (`metrics`, `system_metrics`) fans reads/writes across shards, sharded by
+    **`cityHash64(run_id)`** so a run's points co-locate on one shard (per-run queries stay
+    single-shard) while runs spread evenly. **Application code is sharding-agnostic** — the API still
+    queries `metrics`/`system_metrics` and the ingest gateway still inserts into `metrics` (now with
+    `insert_distributed_sync` so a row lands on its owning shard synchronously); scaling out is a
+    cluster-config + rebalance change, not an app change.
+  - [ ] Remaining: SSO/OIDC, tiered storage lifecycle automation, the actual
     autoscaling manifests (HPA/KEDA), retention automation, observability (OTel/Prometheus/Grafana),
     Helm/Terraform/ArgoCD, load tests.
 
@@ -443,3 +452,21 @@ Redpanda-backed, autoscaled derivation workers.
   default localhost broker is the cluster. DEFERRED (rest of Phase 5): SSO/OIDC, tiered lifecycle
   automation, ClickHouse sharding, HPA/KEDA autoscaling manifests, retention automation, observability
   (OTel/Prometheus/Grafana), Helm/Terraform/ArgoCD, load tests.
+- **2026-06-06:** Phase 5 — **ClickHouse sharding** landed. The metrics plane is now a 2-shard
+  `resonance` cluster (1 replica/shard in dev) coordinated by **ClickHouse Keeper**: dev compose runs
+  `clickhouse-keeper` + `clickhouse-01`/`clickhouse-02` + a `clickhouse-init` one-shot that applies
+  the `ON CLUSTER` DDL once both nodes are reachable (initdb can't, since ON CLUSTER needs every node
+  up). Each shard holds a `*_local` ReplicatedMergeTree (`/clickhouse/tables/{shard}/…`, macros per
+  node); the unsuffixed `metrics`/`system_metrics` are **Distributed** over `cityHash64(run_id)` so a
+  run co-locates on one shard. **No app changes** beyond the ingest sink adding
+  `insert_distributed_sync=1` — the API still queries `metrics` and ingest still inserts into
+  `metrics`. GOTCHAS: node 2's HTTP is on host **8124** (8123 = node 1, the API/ingest target); the
+  Distributed/remote_servers entries carry the `resonance` user/password for inter-node queries;
+  `make dev-reset` is required (new per-node data dirs + Keeper). Verified end-to-end on the live
+  stack: `system.clusters` shows 2 shards; `make demo` (SDK → Go ingest → Distributed `metrics`)
+  landed all 3 demo runs (400 rows each) on shard 2 while 8 ad-hoc test runs split 6/2 across shards;
+  **every run's points co-locate on exactly one shard** (none span both), and the Distributed table
+  returns the same per-run counts queried from either node. (GOTCHA found + fixed: the node/keeper
+  healthchecks must hit `127.0.0.1`, not `localhost` — the container resolves `localhost` to `::1`
+  but the server binds IPv4 only, so a `localhost` probe gets connection-refused and the node never
+  goes healthy.) All Go (ingest) + Python suites green.

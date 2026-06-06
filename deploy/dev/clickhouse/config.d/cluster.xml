@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<!-- Shared cluster topology, mounted into every ClickHouse node. Defines the `resonance` cluster
+     (2 shards, 1 replica each in dev) and points replication at ClickHouse Keeper. Per-node identity
+     ({shard}/{replica} macros) is supplied separately by macros-NN.xml. -->
+<clickhouse>
+    <remote_servers>
+        <resonance>
+            <!-- internal_replication=true: the Distributed table writes to one replica per shard and
+                 lets ReplicatedMergeTree replicate, instead of writing every replica itself. -->
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>clickhouse-01</host>
+                    <port>9000</port>
+                    <user>resonance</user>
+                    <password>resonance</password>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>clickhouse-02</host>
+                    <port>9000</port>
+                    <user>resonance</user>
+                    <password>resonance</password>
+                </replica>
+            </shard>
+        </resonance>
+    </remote_servers>
+
+    <zookeeper>
+        <node>
+            <host>clickhouse-keeper</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+
+    <!-- Where ON CLUSTER DDL queues its task list in Keeper. -->
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+</clickhouse>
