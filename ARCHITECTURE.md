@@ -470,3 +470,20 @@ Redpanda-backed, autoscaled derivation workers.
   healthchecks must hit `127.0.0.1`, not `localhost` — the container resolves `localhost` to `::1`
   but the server binds IPv4 only, so a `localhost` probe gets connection-refused and the node never
   goes healthy.) All Go (ingest) + Python suites green.
+- **2026-06-06:** **End-to-end test suite** added (`e2e/`, issue #12) as the merge-gating source of
+  truth. Unlike the per-component unit suites, it boots the *real* `make up` stack (all three data
+  planes + ingest/media/api/worker) and drives data through the full path: `make e2e`
+  (`e2e/run.sh`) brings the stack up, runs `pytest`, tears down; a new `e2e` GitHub Actions workflow
+  runs it on every PR (mark it **required** in branch protection to enforce the gate). Coverage maps
+  to the §10 phase exit criteria — `test_tracking.py` (SDK→ingest→ClickHouse round-trip,
+  downsampling, **sharding co-location + Distributed aggregation**, graceful backpressure),
+  `test_audio.py` (**dedup zero-bytes**, derivation + **Postgres poll backstop** + idempotency, lazy
+  pagination, media-gateway range 200/206 + HMAC verify/expire/tamper 403, **original-quality**
+  compare §7b, dataset collapse, ratings), `test_tenancy.py` (cross-tenant denial at **API + raw-DB
+  RLS**, RBAC 403/200, token/session/dev-open principals, quota 413, rate-limit 429, browser-auth
+  lifecycle). `test_deferred.py` keeps skipped placeholders for the Phase 5 deferrals (storage
+  tiering; system-metrics path, #10). `scripts/dev.sh` gained `DEV_SERVICES` so the suite/CI start
+  the backend services without the web/vite bring-up. Retries are confined to readiness/async waits
+  (`wait_until`); tests run serially for predictable rate-budget/ordering. NOTE: the per-org
+  `rate_limit_per_min` column is not yet wired into `resolve_org` (it uses the global default), so
+  the 429 test bursts past the default on a dedicated, window-aligned org.

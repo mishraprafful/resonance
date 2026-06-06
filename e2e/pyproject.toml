@@ -1,0 +1,18 @@
+# Configuration-only project: the E2E suite is run with pytest against a live stack, it is not an
+# importable package. Runtime deps live in requirements.txt (installed into the shared dev venv).
+
+[tool.pytest.ini_options]
+# rootdir is e2e/ (run.sh cd's here), so "." puts helpers.py + conftest.py on the import path.
+pythonpath = ["."]
+testpaths = ["."]
+# A generous per-test cap: most time is spent waiting on async derivation / the ingest flush, not
+# compute. A hang (e.g. a dead service) fails loudly instead of stalling the whole CI job.
+timeout = 240
+addopts = "-ra -v --tb=short -p no:randomly"
+markers = [
+    "tracking: metrics plane (SDK -> ingest -> ClickHouse -> API), sharding, backpressure",
+    "audio: audio plane — dedup, derivation, streaming, compare, datasets, ratings",
+    "tenancy: multi-tenant isolation (API + RLS), RBAC, quotas, rate limits, browser auth",
+    "deferred: documents a roadmap deferral (Phase 5 / cross-issue); skipped, not gating",
+    "slow: longer-running (e.g. rate-limit burst); kept in the gate but isolated",
+]

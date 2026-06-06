@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose -f deploy/dev/docker-compose.yml
 
-.PHONY: help dev-up dev-down dev-logs dev-ps lint test \
+.PHONY: help dev-up dev-down dev-logs dev-ps lint test e2e \
         sdk-install api-install workers-install web-install \
         ingest-build media-build
 
@@ -74,6 +74,10 @@ test: ## Run all tests
 	cd services/api && pytest -q || true
 	cd services/ingest && go test ./... || true
 	cd services/media && go test ./... || true
+
+## --- End-to-end suite (merge gate) ---
+e2e: ## Bring up the full stack, run the end-to-end suite against it, tear down (KEEP_UP=1 to keep)
+	./e2e/run.sh
 
 ## --- Load testing / capacity certification ---
 loadtest: ## Run the k6 load-test suite (requires k6); BASE_URL overridable
