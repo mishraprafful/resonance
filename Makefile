@@ -35,17 +35,17 @@ open: ## Open the app in your browser (macOS)
 
 ## --- Dev stack only ---
 dev-up: ## Start just the data stack (Postgres, ClickHouse, MinIO, Redpanda, Redis)
-	$(COMPOSE) up -d
+	$(COMPOSE) up -d --remove-orphans
 dev-down: ## Stop the dev stack
-	$(COMPOSE) down
+	$(COMPOSE) down --remove-orphans
 dev-logs: ## Tail dev stack logs
 	$(COMPOSE) logs -f
 dev-ps: ## Show dev stack status
 	$(COMPOSE) ps
 dev-reset: ## DESTROY local data (needed after a schema change) and restart the stack
-	$(COMPOSE) down
+	$(COMPOSE) down --remove-orphans
 	rm -rf deploy/dev/.data
-	$(COMPOSE) up -d
+	$(COMPOSE) up -d --remove-orphans
 
 ## --- Install / build ---
 sdk-install: ## Install the Python SDK (editable)
