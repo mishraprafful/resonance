@@ -18,6 +18,7 @@ import pytest
 
 import helpers
 from helpers import (
+    CONFIG,
     make_wav,
     media_url,
     parse_stream_url,
@@ -126,6 +127,31 @@ def test_derivation_poll_backstop_reprocesses(org):
         "WHERE org_id = %s AND sha256 = %s",
         (org.org_id, sha),
     )
+    asset = _wait_for_derivation(org.org_id, sha)
+    assert asset["derivations"].get("peaks_key") and asset["derivations"].get("spectrogram_key")
+    api.close()
+
+
+def test_derivation_fast_lane_publishes_consumable_job(org):
+    """The fast lane: on asset registration the API publishes a derivation job to the Redpanda topic
+    (the event-driven path workers scale on), the job is consumable from the topic, and the asset is
+    derived end-to-end. Complements the poll-backstop test above — together they cover *both* paths.
+    """
+    api = org.client()
+    payload, _ = make_wav(seed=300)
+    sha = upload_asset(api, payload)
+    register_audio(api, helpers.create_run(api, "fastlane")["id"], "k", sha,
+                   step=0, size_bytes=len(payload), sample_rate=22050)
+
+    # The producer side of the fast lane: a job carrying this asset's sha is published to the topic.
+    job = helpers.pandaproxy_await_value(
+        CONFIG.derivation_topic, lambda v: v.get("sha256") == sha, timeout=30,
+    )
+    assert job is not None, "no derivation job was published to the Redpanda topic for the new asset"
+    assert job["org_id"] == org.org_id
+    assert job["storage_key"] == helpers.blob_key(org.org_id, sha)
+
+    # And derivation completes (fast lane + poll backstop both converge, idempotently).
     asset = _wait_for_derivation(org.org_id, sha)
     assert asset["derivations"].get("peaks_key") and asset["derivations"].get("spectrogram_key")
     api.close()

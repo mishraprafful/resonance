@@ -36,7 +36,7 @@ The suite is organized by data plane and asserts the **Phase exit criteria** in 
 | File | Plane / concern | §10 mapping |
 |------|-----------------|-------------|
 | `test_tracking.py` | SDK→ingest→ClickHouse→API round-trip (exact), server-side downsampling, metric-name listing, **ClickHouse sharding** (per-run co-location + Distributed aggregation), graceful backpressure, ingest contract validation | Phase 1 + Phase 5 sharding |
-| `test_audio.py` | content-addressed **dedup (zero bytes on re-log)**, derivation (peaks + spectrogram + probes, **Postgres poll backstop**, idempotency), lazy/paginated listing (no URLs up front), media-gateway **range 200/206 + HMAC verify/expire/tamper 403**, **original-quality** compare path (§7b), dataset version collapse, ratings round-trip | Phase 2 / 3 + §7b |
+| `test_audio.py` | content-addressed **dedup (zero bytes on re-log)**, derivation (peaks + spectrogram + probes) via **both the Redpanda fast lane and the Postgres poll backstop** (idempotent across both), lazy/paginated listing (no URLs up front), media-gateway **range 200/206 + HMAC verify/expire/tamper 403**, **original-quality** compare path (§7b), dataset version collapse, ratings round-trip | Phase 2 / 3 + §7b |
 | `test_tenancy.py` | cross-tenant denial at **API layer and raw DB/RLS layer**, RBAC (member 403 / owner 200), the three principals (token / browser session / dev-open), **storage quota 413**, **rate limit 429**, browser auth (bootstrap → signup create/join → approve → per-team scoping) | Phase 4 / 4b |
 | `test_deferred.py` | documented, **skipped** placeholders for not-yet-built scope (storage tiering lifecycle; system-metrics path, issue #10) | Phase 5 deferrals |
 

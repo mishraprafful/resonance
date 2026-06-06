@@ -55,6 +55,11 @@ class E2EConfig:
         "E2E_PG_APP_DSN", "postgresql://resonance_app:resonance_app@localhost:5432/resonance"
     )
 
+    # Redpanda HTTP proxy (pandaproxy) — the derivation fast lane. The API publishes jobs here on
+    # asset registration; the worker consumes them (with a Postgres poll as the correctness backstop).
+    pandaproxy_url: str = os.environ.get("E2E_PANDAPROXY_URL", "http://localhost:8082")
+    derivation_topic: str = os.environ.get("E2E_DERIVATION_TOPIC", "audio.derivations")
+
     s3_endpoint: str = os.environ.get("E2E_S3_ENDPOINT", "http://localhost:9100")
     s3_region: str = os.environ.get("E2E_S3_REGION", "us-east-1")
     s3_access_key: str = os.environ.get("E2E_S3_ACCESS_KEY", "resonance")
@@ -348,3 +353,43 @@ def parse_stream_url(url: str) -> tuple[str, int, str]:
     object_key = parsed.path.split("/v1/stream/", 1)[1]
     qs = dict(p.split("=", 1) for p in parsed.query.split("&"))
     return object_key, int(qs["exp"]), qs["sig"]
+
+
+# --------------------------------------------------------------------------------------------------
+# Redpanda fast lane — peek the derivation topic via pandaproxy (same REST API the worker consumes
+# with). Uses a throwaway consumer group so it reads its own copy and never disturbs the worker's
+# `resonance-derivers` group.
+# --------------------------------------------------------------------------------------------------
+_KAFKA_V2 = "application/vnd.kafka.v2+json"
+_KAFKA_JSON_V2 = "application/vnd.kafka.json.v2+json"
+
+
+def pandaproxy_await_value(topic: str, predicate: Callable[[dict], bool],
+                           *, timeout: float = 30.0) -> dict | None:
+    """Read records off ``topic`` (from the beginning, in a fresh group) until ``predicate`` matches
+    a record value or ``timeout`` elapses. Returns the matching value, or None on timeout."""
+    proxy = CONFIG.pandaproxy_url.rstrip("/")
+    group = f"e2e-peek-{uuid.uuid4().hex[:8]}"
+    with httpx.Client(timeout=30.0) as c:
+        resp = c.post(
+            f"{proxy}/consumers/{group}", headers={"Content-Type": _KAFKA_V2},
+            json={"format": "json", "auto.offset.reset": "earliest", "auto.commit.enable": "false"},
+        )
+        resp.raise_for_status()
+        base = f"{proxy}/consumers/{group}/instances/{resp.json()['instance_id']}"
+        try:
+            c.post(f"{base}/subscription", headers={"Content-Type": _KAFKA_V2},
+                   json={"topics": [topic]}).raise_for_status()
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                r = c.get(f"{base}/records?timeout=1000", headers={"Accept": _KAFKA_JSON_V2})
+                r.raise_for_status()
+                for rec in r.json():
+                    if predicate(rec["value"]):
+                        return rec["value"]
+            return None
+        finally:
+            try:
+                c.delete(base)
+            except Exception:
+                pass
