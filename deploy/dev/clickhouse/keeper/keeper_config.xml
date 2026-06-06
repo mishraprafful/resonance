@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<!-- ClickHouse Keeper — coordination for the sharded metrics cluster (the ZooKeeper replacement).
+     Single-node ensemble for dev; ReplicatedMergeTree on each shard registers its parts here. -->
+<clickhouse>
+    <logger>
+        <level>warning</level>
+        <console>true</console>
+    </logger>
+    <listen_host>0.0.0.0</listen_host>
+
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>warning</raft_logs_level>
+        </coordination_settings>
+
+        <!-- HTTP readiness probe (used by the compose healthcheck). -->
+        <http_control>
+            <port>9182</port>
+            <readiness>
+                <endpoint>/ready</endpoint>
+            </readiness>
+        </http_control>
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>clickhouse-keeper</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
