@@ -25,7 +25,7 @@ from botocore.client import Config
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
-from . import audio
+from . import audio, lifecycle
 from .queue import RestConsumer
 
 
@@ -141,6 +141,13 @@ def main() -> None:  # pragma: no cover - process entrypoint
     else:
         print("PANDAPROXY_URL unset — derivation runs from the Postgres poll backstop only")
 
+    # Storage lifecycle: periodically tier assets hot -> ia -> archive by access recency (the worker
+    # runs RLS-bypass, so one sweep covers every tenant). Independent of derivation; best-effort.
+    sweep_thread: threading.Thread | None = None
+    if lifecycle.ENABLED:
+        sweep_thread = threading.Thread(target=lifecycle.sweep_loop, args=(stop, DSN))
+        sweep_thread.start()
+
     # Stop cleanly on SIGTERM/SIGINT so the consumer thread can deregister its pandaproxy instance —
     # otherwise each restart leaves a dead member in the group, starving the live one of partitions.
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -159,6 +166,8 @@ def main() -> None:  # pragma: no cover - process entrypoint
 
     if consumer_thread:
         consumer_thread.join(timeout=10)
+    if sweep_thread:
+        sweep_thread.join(timeout=10)
 
 
 if __name__ == "__main__":  # pragma: no cover

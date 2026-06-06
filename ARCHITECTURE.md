@@ -333,7 +333,19 @@ Redpanda-backed, autoscaled derivation workers.
     queries `metrics`/`system_metrics` and the ingest gateway still inserts into `metrics` (now with
     `insert_distributed_sync` so a row lands on its owning shard synchronously); scaling out is a
     cluster-config + rebalance change, not an app change.
-  - [ ] Remaining: SSO/OIDC, tiered storage lifecycle automation, the actual
+  - [x] **Tiered storage lifecycle automation** (closes the §2.4 / §7 "lifecycle tiering" lever):
+    a non-destructive, access-recency-aware engine in the worker (RLS-bypass, so one sweep covers
+    every tenant) transitions each asset **hot → ia → archive** by age since last activity
+    (`max(last_accessed_at, created_at)`), driven by a **per-tenant policy** (`orgs.lifecycle_policy`,
+    `{ia_days, archive_days}`; platform defaults otherwise). It reconciles both the DB
+    `assets.storage_tier` (UI/API source of truth) **and** an S3 **object tag** (`resonance-tier`) so
+    a real S3/GCS bucket lifecycle rule transitions the underlying storage class by tag — PB-scale
+    cost economics stay in the object store. **Access warms** an asset back to hot: the control API
+    bumps `last_accessed_at` (and flips the DB tier) when it mints a playback URL, DB-only so the hot
+    path never makes an object-store call. Admins set policy via `PUT /v1/orgs/{id}/lifecycle`;
+    `GET /v1/org` returns the per-tier breakdown. **Nothing is deleted** — retention/expiration is a
+    deliberately separate, gated concern.
+  - [ ] Remaining: SSO/OIDC, the actual
     autoscaling manifests (HPA/KEDA), retention automation, observability (OTel/Prometheus/Grafana),
     Helm/Terraform/ArgoCD, load tests.
 
@@ -452,6 +464,22 @@ Redpanda-backed, autoscaled derivation workers.
   default localhost broker is the cluster. DEFERRED (rest of Phase 5): SSO/OIDC, tiered lifecycle
   automation, ClickHouse sharding, HPA/KEDA autoscaling manifests, retention automation, observability
   (OTel/Prometheus/Grafana), Helm/Terraform/ArgoCD, load tests.
+- **2026-06-06:** Phase 5 — **tiered storage lifecycle automation** landed + verified end-to-end.
+  A non-destructive sweep in the worker (`lifecycle.py`, runs RLS-bypass so one pass covers every
+  tenant) recomputes each asset's target tier from **age since last activity** vs a **per-tenant
+  policy** (`orgs.lifecycle_policy {ia_days, archive_days}`; platform defaults 30/90d) and reconciles
+  the DB `assets.storage_tier` **and** an S3 object tag `resonance-tier` (so real S3/GCS lifecycle
+  rules transition the storage class by tag — we never proxy bytes to tier them). New columns:
+  `assets.storage_tier|last_accessed_at|tiered_at` + `assets_tier_idx`. **Warm-on-access**: the API
+  bumps `last_accessed_at` + flips the DB tier to hot when minting a playback URL (`/url` +
+  `/stream-url`, `kind=original`), DB-only so the hot path makes no object-store call; the next sweep
+  re-tags the blob. New API: `PUT /v1/orgs/{id}/lifecycle` (admin) + tier breakdown in `GET /v1/org`.
+  Verified on the live stack: 7 demo assets backdated (3×100d, 2×40d, 2 fresh) → one sweep put 3 in
+  `archive` + 2 in `ia` + 2 `hot`, **DB tier == object tag on every asset**; a `stream-url` call on an
+  archived asset warmed it to hot (org breakdown archive 3→2, hot 2→3) and the next sweep retagged the
+  blob hot; setting a lax per-tenant policy (`ia=1000,archive=2000`) re-tiered all 7 back to hot.
+  Sweep is idempotent at steady state (0 writes). Bytes are **never deleted** — retention/expiration
+  stays a separate gated concern. All Python suites green (api 4, workers 11); ruff clean.
 - **2026-06-06:** Phase 5 — **ClickHouse sharding** landed. The metrics plane is now a 2-shard
   `resonance` cluster (1 replica/shard in dev) coordinated by **ClickHouse Keeper**: dev compose runs
   `clickhouse-keeper` + `clickhouse-01`/`clickhouse-02` + a `clickhouse-init` one-shot that applies

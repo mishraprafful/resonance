@@ -11,6 +11,7 @@ import re
 import secrets
 
 from fastapi import Depends, FastAPI, HTTPException, Response
+from psycopg.types.json import Json
 from pydantic import BaseModel
 
 from . import auth_routes, clickhouse, db, media, queue, storage
@@ -24,6 +25,7 @@ from .models import (
     Dataset,
     DatasetCreate,
     DatasetDetail,
+    LifecyclePolicy,
     Member,
     MemberCreate,
     MetricSeries,
@@ -337,6 +339,23 @@ def list_audio(
     return AudioPage(items=items, next_cursor=next_cursor)
 
 
+def _touch_asset(org_id: str, sha: str) -> None:
+    """Record access for storage-lifecycle recency and **warm** an IA/archived asset back to hot, so
+    a clip someone is actively listening to isn't left in a cold tier. DB-only + best-effort: the hot
+    playback path never makes an object-store call (the worker's sweep re-tags the blob), and access
+    tracking must never block playback."""
+    try:
+        with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE assets SET last_accessed_at = now(), storage_tier = 'hot', "
+                "tiered_at = CASE WHEN storage_tier <> 'hot' THEN now() ELSE tiered_at END "
+                "WHERE org_id = %s AND sha256 = %s",
+                (org_id, sha),
+            )
+    except Exception:
+        pass
+
+
 def _resolve_asset_key(org_id: str, sha: str, kind: str) -> str:
     """Map (asset, kind) -> object-store key. `original` is the exact uploaded bytes; peaks/
     spectrogram come from the worker's recorded derivation keys."""
@@ -362,6 +381,8 @@ def presign_asset(
     """Mint a (Redis-cached) presigned GET URL on demand. `original` always serves the exact
     uploaded bytes — comparison plays original quality, never a lossy rendition."""
     key = _resolve_asset_key(org_id, sha, kind)
+    if kind == "original":
+        _touch_asset(org_id, sha)  # access recency + warm-on-access
     return PresignResponse(sha256=sha, kind=kind, url=storage.presign_get(key))
 
 
@@ -374,6 +395,8 @@ def stream_asset(
     falls back to a direct presigned object-store GET so playback works with no gateway running.
     Always serves the ORIGINAL quality on the compare path — never a lossy rendition (§7b)."""
     key = _resolve_asset_key(org_id, sha, kind)
+    if kind == "original":
+        _touch_asset(org_id, sha)  # access recency + warm-on-access
     url = media.stream_url(key) if media.enabled() else storage.presign_get(key)
     return PresignResponse(sha256=sha, kind=kind, url=url)
 
@@ -490,14 +513,44 @@ def create_org(body: OrgCreate, p: Principal = Depends(principal)) -> OrgCreated
     return OrgCreated(**_org_row(org), owner_token=secret)
 
 
-@app.get("/v1/org", response_model=Org)
-def current_org(org_id: str = Depends(resolve_org)) -> Org:
+def _org_summary(org_id: str) -> Org:
+    """Org metadata + storage usage + tier breakdown. Uses a tenant connection so the `assets`
+    aggregates pass RLS (orgs itself isn't under RLS, so reading it here is fine too)."""
     with db.tenant_connection(org_id) as conn, conn.cursor() as cur:
         cur.execute("SELECT * FROM orgs WHERE id = %s", (org_id,))
         org = cur.fetchone()
         cur.execute("SELECT COALESCE(SUM(size_bytes),0) AS used FROM assets WHERE org_id = %s", (org_id,))
         used = cur.fetchone()["used"]
-    return Org(**_org_row(org), storage_used_bytes=used)
+        cur.execute(
+            "SELECT storage_tier, count(*) AS n FROM assets WHERE org_id = %s GROUP BY storage_tier",
+            (org_id,),
+        )
+        tiers = {r["storage_tier"]: r["n"] for r in cur.fetchall()}
+    return Org(**_org_row(org), storage_used_bytes=used, storage_tiers=tiers)
+
+
+@app.get("/v1/org", response_model=Org)
+def current_org(org_id: str = Depends(resolve_org)) -> Org:
+    return _org_summary(org_id)
+
+
+@app.put("/v1/orgs/{org_id}/lifecycle", response_model=Org)
+def set_lifecycle_policy(
+    org_id: str, body: LifecyclePolicy, p: Principal = Depends(principal)
+) -> Org:
+    """Set this tenant's storage-lifecycle thresholds (admin only). Omit a field to fall back to the
+    platform default for that stage; send an empty body to clear the override entirely. The worker's
+    next sweep re-tiers assets under the new policy."""
+    _require_org_admin(p, org_id)
+    policy = {k: v for k, v in body.model_dump().items() if v is not None}
+    with db.connection() as conn, conn.cursor() as cur:  # orgs isn't under RLS
+        cur.execute(
+            "UPDATE orgs SET lifecycle_policy = %s WHERE id = %s",
+            (Json(policy) if policy else None, org_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="org not found")
+    return _org_summary(org_id)
 
 
 @app.post("/v1/orgs/{org_id}/tokens", response_model=TokenCreated)
@@ -565,6 +618,7 @@ def _org_row(r: dict) -> dict:
     return {
         "id": str(r["id"]), "slug": r["slug"], "name": r["name"],
         "storage_quota_bytes": r["storage_quota_bytes"], "created_at": r["created_at"],
+        "lifecycle_policy": r.get("lifecycle_policy"),
     }
 
 
