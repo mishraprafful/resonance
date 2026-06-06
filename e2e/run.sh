@@ -97,9 +97,24 @@ set +e
 RESULT=$?
 set -e
 
-if [ "$RESULT" -eq 0 ]; then
-  echo "==> e2e suite PASSED"
-else
-  echo "!! e2e suite FAILED (exit $RESULT) — app logs are under .run/*.log"
+# --- 6. k6 smoke of the hot paths, as part of the gate (functional, not capacity certification).
+# Skipped (not failed) when k6 isn't installed locally; CI installs it so the gate always runs it.
+SMOKE_RESULT=0
+if [ -z "${E2E_SKIP_SMOKE:-}" ] && command -v k6 >/dev/null 2>&1; then
+  echo "==> running k6 smoke (hot paths)"
+  set +e
+  API_URL="http://localhost:$API_PORT" INGEST_URL="http://localhost:$INGEST_HTTP_PORT" \
+    k6 run "$ROOT/loadtest/smoke.js"
+  SMOKE_RESULT=$?
+  set -e
+elif [ -z "${E2E_SKIP_SMOKE:-}" ]; then
+  echo "==> k6 not found — skipping smoke (install k6 to include it in the gate)"
 fi
-exit $RESULT
+
+if [ "$RESULT" -eq 0 ] && [ "$SMOKE_RESULT" -eq 0 ]; then
+  echo "==> e2e suite PASSED"
+  exit 0
+fi
+echo "!! e2e FAILED (pytest=$RESULT k6-smoke=$SMOKE_RESULT) — app logs are under .run/*.log"
+[ "$RESULT" -ne 0 ] && exit "$RESULT"
+exit "$SMOKE_RESULT"

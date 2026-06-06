@@ -21,12 +21,22 @@ E2E_PYTEST_ARGS="-k audio -x" ./e2e/run.sh   # focus on one plane, stop on first
 
 `make e2e` is `e2e/run.sh`, which: brings up the docker dev stack → waits for the data planes →
 builds + starts the backend services (`ingest`, `media`, `api`, `worker`) on the host via
-`scripts/dev.sh` (web/vite is skipped via `DEV_SERVICES`) → waits for them → runs `pytest` → tears
-everything down. Service logs are left under `.run/*.log` on failure.
+`scripts/dev.sh` (web/vite is skipped via `DEV_SERVICES`) → waits for them → runs `pytest` → runs a
+**k6 hot-path smoke** → tears everything down. Service logs are left under `.run/*.log` on failure.
 
-Requirements: Docker + `docker compose`, Go 1.22, Python 3.11, and `libsndfile` (for `soundfile`).
-Everything else installs into the shared `.venv` (`e2e/requirements.txt` + the editable SDK/API/
-workers).
+Requirements: Docker + `docker compose`, Go 1.22, Python 3.11, `libsndfile` (for `soundfile`), and
+[`k6`](https://k6.io) for the smoke. Everything else installs into the shared `.venv`
+(`e2e/requirements.txt` + the editable SDK/API/workers). If `k6` isn't installed the smoke is
+skipped locally (set `E2E_SKIP_SMOKE=1` to force-skip); CI installs it so the gate always runs it.
+
+## Hot-path smoke (k6)
+
+`loadtest/smoke.js` runs as part of the gate: it drives the two hot paths (metric ingest →
+gateway; audio-prepare → API) under a little concurrent load on a dedicated tenant and gates on
+**functional correctness** — requests succeed, error rate ~0. It is **not** capacity certification:
+the strict SLOs (ingest p95 < 50 ms, prepare p95 < 75 ms) belong to the full k6 suite on the
+reference rig (`loadtest/run.sh`, see `loadtest/README.md`); the smoke's latency threshold is only a
+generous "nothing is grossly broken" ceiling so it stays green on a shared CI runner.
 
 ## What it covers (and where each criterion lives)
 
