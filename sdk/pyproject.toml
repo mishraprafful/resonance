@@ -16,7 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 audio = ["soundfile>=0.12"]
-dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
+dev = ["pytest>=8", "ruff==0.15.16", "mypy>=1.11"]
 
 [project.scripts]
 resonance = "resonance.cli:main"
