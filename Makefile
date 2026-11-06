@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose -f deploy/dev/docker-compose.yml
 
-.PHONY: help dev-up dev-down dev-logs dev-ps lint test e2e \
+.PHONY: help site dev-up dev-down dev-logs dev-ps lint test e2e \
         sdk-install api-install workers-install web-install \
         ingest-build media-build
 
@@ -32,6 +32,8 @@ app-logs: ## Tail app service logs (make app-logs svc=api)
 	@bash scripts/dev.sh logs $(svc)
 open: ## Open the app in your browser (macOS)
 	@open http://localhost:5173 2>/dev/null || echo "open http://localhost:5173"
+site: ## Serve the project website on http://localhost:5290
+	python3 -m http.server 5290 --directory site
 
 ## --- Dev stack only ---
 dev-up: ## Start just the data stack (Postgres, ClickHouse, MinIO, Redpanda, Redis)
