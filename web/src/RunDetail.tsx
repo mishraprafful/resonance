@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api, type AudioEntry, type MetricPoint, type Project, type Run } from "./api";
 import { fmt, runColor, type ChartStyle, type ColormapName } from "./design/theme";
 import { Icon } from "./design/icons";
-import { Btn, Empty, KV, Panel, SectionLabel, StatusDot } from "./design/ui";
+import { Btn, Empty, KV, PageTitle, Panel, SectionLabel, StatusDot } from "./design/ui";
 import { MetricChart, Spectrogram, Waveform, playBtnStyle, useAudioPlayer } from "./design/audioviz";
 import { useAudioEntries, useAudioKeys, useEntryUrls } from "./audioData";
 import { betterDir, colLabel, fmtMetric, isLrMetric } from "./runsData";
@@ -65,10 +65,9 @@ export function RunDetail({
       {/* header */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 22 }}>
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ width: 13, height: 13, borderRadius: 4, background: runColor(run.id) }} />
-            <h1 style={{ fontFamily: "var(--font-display)", fontSize: 34, fontWeight: 500, letterSpacing: "-0.03em", margin: 0, color: "var(--ink-strong)" }}>{run.display_name ?? run.id.slice(0, 8)}</h1>
-          </div>
+          <PageTitle eyebrow={<>Run<span style={{ width: 8, height: 8, borderRadius: 2, background: runColor(run.id) }} /></>}>
+            {run.display_name ?? run.id.slice(0, 8)}
+          </PageTitle>
           <div style={{ display: "flex", gap: 14, marginTop: 10, alignItems: "center", color: "var(--muted)", fontSize: 13, flexWrap: "wrap" }}>
             <StatusDot state={run.state} />
             {cfg.model != null && <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Icon name="cpu" size={14} />{String(cfg.model)}</span>}
@@ -89,7 +88,7 @@ export function RunDetail({
             const pts = series[n] || [];
             const v = pts.length ? pts[pts.length - 1].value : null;
             return (
-              <div key={n} style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 10, padding: "14px 16px" }}>
+              <div key={n} style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", padding: "14px 16px" }}>
                 <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" }}>{colLabel(n)}</div>
                 <div style={{ fontFamily: "var(--font-display)", fontSize: 28, fontWeight: 500, letterSpacing: "-0.02em", marginTop: 6, color: "var(--ink-strong)" }}>{v != null ? fmtMetric(n, v) : "—"}</div>
                 <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 3 }}>{betterDir(n) === "down" ? "lower better" : "higher better"}</div>
@@ -113,7 +112,7 @@ export function RunDetail({
                   const last = pts.length ? pts[pts.length - 1].value : null;
                   const lr = isLrMetric(n);
                   return (
-                    <div key={n} style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
+                    <div key={n} style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", padding: 14 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
                         <div style={{ fontFamily: "var(--mono)", fontSize: 12.5, color: "var(--muted)" }}>{n}</div>
                         <div style={{ fontFamily: "var(--mono)", fontSize: 14, fontWeight: 600, color: "var(--ink-strong)" }}>{last == null ? "—" : lr ? last.toExponential(1) : last.toFixed(3)}</div>
@@ -170,11 +169,11 @@ function RunAudioPanel({ runId, colormap }: { runId: string; colormap: ColormapN
   return (
     <div>
       <SectionLabel right={<div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "var(--faint)" }}><Icon name="music" size={13} />original quality</div>}>Generated audio</SectionLabel>
-      <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
+      <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
         <div style={{ display: "flex", gap: 2, padding: 8, borderBottom: "1px solid var(--line)", overflowX: "auto" }}>
           {keys.map((k) => (
             <button key={k} onClick={() => setKey(k)}
-              style={{ border: 0, cursor: "pointer", padding: "8px 12px", borderRadius: 7, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap",
+              style={{ border: 0, cursor: "pointer", padding: "8px 12px", borderRadius: "var(--r-md)", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap",
                 background: key === k ? "var(--panel-3)" : "transparent", color: key === k ? "var(--ink-strong)" : "var(--muted)", fontFamily: "var(--mono)" }}>{k}</button>
           ))}
         </div>
@@ -210,10 +209,10 @@ function KeyPanel({ runId, keyName, colormap }: { runId: string; keyName: string
           {entry.caption && <span style={{ fontStyle: "italic", fontFamily: "var(--font-display)", fontSize: 18, color: "var(--ink-strong)" }}>“{entry.caption}”</span>}
         </div>
         {hasRef && (
-          <div style={{ display: "flex", gap: 3, background: "var(--panel-2)", padding: 3, borderRadius: 8, border: "1px solid var(--line-soft)" }}>
+          <div style={{ display: "flex", gap: 3, background: "var(--panel-2)", padding: 3, borderRadius: "var(--r-md)", border: "1px solid var(--line-soft)" }}>
             {(["out", "ref"] as const).map((v) => (
               <button key={v} onClick={() => setSolo(v)}
-                style={{ border: 0, cursor: "pointer", padding: "6px 13px", borderRadius: 6, fontSize: 12.5, fontWeight: 600,
+                style={{ border: 0, cursor: "pointer", padding: "6px 13px", borderRadius: "var(--r-sm)", fontSize: 12.5, fontWeight: 600,
                   background: solo === v ? "var(--accent)" : "transparent", color: solo === v ? "var(--accent-ink)" : "var(--muted)" }}>{v === "out" ? "Output" : "Reference"}</button>
             ))}
           </div>

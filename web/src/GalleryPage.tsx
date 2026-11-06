@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { api, type AudioEntry, type Project } from "./api";
 import { fmt, runColor, type ColormapName } from "./design/theme";
 import { Icon } from "./design/icons";
-import { Btn, ColormapPicker, Empty, Segmented } from "./design/ui";
+import { Btn, ColormapPicker, Empty, PageTitle, Segmented } from "./design/ui";
 import { Spectrogram, Waveform, playBtnStyle, useAudioPlayer } from "./design/audioviz";
 import { fetchAllEntries } from "./audioData";
 import { useEnrichedRuns, type EnrichedRun } from "./runsData";
@@ -70,7 +70,7 @@ export function GalleryPage({ project, colormap }: { project: Project; colormap:
   return (
     <div>
       <div style={{ marginBottom: 18 }}>
-        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 34, fontWeight: 500, letterSpacing: "-0.03em", margin: 0, color: "var(--ink-strong)" }}>Sample gallery</h1>
+        <PageTitle eyebrow="Audio">Sample gallery</PageTitle>
         <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 14 }}>{project.name} · every generated sample, with inline spectrograms. Click a tile to open the viewer.</p>
       </div>
 
@@ -103,7 +103,7 @@ export function GalleryPage({ project, colormap }: { project: Project; colormap:
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
               {cards.map((c) => (
                 <div key={c.entry.id} onClick={() => setFocus(c)} className="res-card"
-                  style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden", cursor: "pointer" }}>
+                  style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", overflow: "hidden", cursor: "pointer" }}>
                   <Spectrogram imageUrl={c.spec} colormap={colormap} height={96} />
                   <div style={{ padding: "10px 12px" }}>
                     <Waveform peaksUrl={c.peaks} color={runColor(c.run.id)} height={26} />
@@ -155,7 +155,7 @@ function SpectrogramFocus({ card, initialColormap, onClose }: { card: Card; init
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(6px)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 28 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(960px, 100%)", background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "var(--shadow)", overflow: "hidden" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(960px, 100%)", background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", boxShadow: "var(--shadow)", overflow: "hidden" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "18px 20px", borderBottom: "1px solid var(--line)" }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
@@ -165,7 +165,7 @@ function SpectrogramFocus({ card, initialColormap, onClose }: { card: Card; init
             </div>
             {card.entry.caption && <div style={{ fontStyle: "italic", fontFamily: "var(--font-display)", fontSize: 17, color: "var(--ink)", marginTop: 6 }}>“{card.entry.caption}”</div>}
           </div>
-          <button onClick={onClose} style={{ border: 0, background: "var(--panel-2)", borderRadius: 8, width: 34, height: 34, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--ink)" }}><Icon name="x" size={18} /></button>
+          <button onClick={onClose} style={{ border: 0, background: "var(--panel-2)", borderRadius: "var(--r-md)", width: 34, height: 34, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--ink)" }}><Icon name="x" size={18} /></button>
         </div>
         <div style={{ padding: 20 }}>
           <Spectrogram imageUrl={card.spec} colormap={cmap} progress={progress} height={300} onSeek={(f) => seek(f * duration)} showAxis />

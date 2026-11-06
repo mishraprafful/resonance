@@ -7,7 +7,7 @@ import { ColormapSwatch } from "./ui";
 import { ACCENTS, TWEAK_DEFAULTS, type Tweaks } from "./theme";
 import { COLORMAP_NAMES } from "./colormaps";
 
-const STORAGE_KEY = "res_tweaks";
+const STORAGE_KEY = "res_tweaks_v2";
 
 export function useTweaks(): [Tweaks, <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => void] {
   const [values, setValues] = useState<Tweaks>(() => {
@@ -36,7 +36,7 @@ export function useTweaks(): [Tweaks, <K extends keyof Tweaks>(key: K, value: Tw
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 500, color: "var(--muted)" }}>{label}</div>
       {children}
     </div>
   );
@@ -54,11 +54,12 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
 
 function Radio<T extends string>({ value, options, onChange }: { value: T; options: T[]; onChange: (v: T) => void }) {
   return (
-    <div style={{ display: "flex", gap: 3, background: "var(--panel-2)", padding: 3, borderRadius: 8, border: "1px solid var(--line-soft)" }}>
+    <div style={{ display: "flex", gap: 2, background: "var(--panel-2)", padding: 2, borderRadius: "var(--r-md)", border: "1px solid var(--line)" }}>
       {options.map((o) => (
         <button key={o} onClick={() => onChange(o)}
-          style={{ flex: 1, border: 0, cursor: "pointer", padding: "6px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, textTransform: "capitalize",
-            background: value === o ? "var(--panel)" : "transparent", color: value === o ? "var(--ink-strong)" : "var(--muted)" }}>
+          style={{ flex: 1, border: 0, cursor: "pointer", padding: "6px 8px", borderRadius: "var(--r-sm)", fontSize: 12, fontWeight: 600, textTransform: "capitalize",
+            background: value === o ? "var(--panel-3)" : "transparent", color: value === o ? "var(--ink-strong)" : "var(--muted)",
+            boxShadow: value === o ? "inset 0 0 0 1px var(--line)" : "none" }}>
           {o}
         </button>
       ))}
@@ -67,7 +68,7 @@ function Radio<T extends string>({ value, options, onChange }: { value: T; optio
 }
 
 function Section({ label }: { label: string }) {
-  return <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--faint)", marginTop: 4 }}>{label}</div>;
+  return <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-2)", marginTop: 4, paddingTop: 10, borderTop: "1px solid var(--line-soft)" }}>{label}</div>;
 }
 
 export function TweaksPanel({ t, setTweak }: { t: Tweaks; setTweak: <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => void }) {
@@ -83,15 +84,15 @@ export function TweaksPanel({ t, setTweak }: { t: Tweaks; setTweak: <K extends k
   return (
     <>
       <button onClick={() => setOpen((o) => !o)} title="Tweaks (⌘.)"
-        style={{ position: "fixed", right: 20, bottom: 20, zIndex: 90, width: 46, height: 46, borderRadius: 999, border: "1px solid var(--line)",
+        style={{ position: "fixed", right: 20, bottom: 20, zIndex: 90, width: 42, height: 42, borderRadius: "var(--r-lg)", border: "1px solid var(--line)",
           background: "var(--panel)", color: "var(--ink)", boxShadow: "var(--shadow)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <Icon name="sliders" size={20} />
       </button>
       {open && (
         <div style={{ position: "fixed", right: 20, bottom: 78, zIndex: 91, width: 288, maxHeight: "calc(100vh - 110px)", overflowY: "auto",
-          background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 14, boxShadow: "var(--shadow)", padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+          background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", boxShadow: "var(--shadow)", padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 500, color: "var(--ink-strong)" }}>Tweaks</span>
+            <span style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--ink-strong)" }}>Tweaks</span>
             <button onClick={() => setOpen(false)} style={{ border: 0, background: "transparent", cursor: "pointer", color: "var(--muted)" }}><Icon name="x" size={16} /></button>
           </div>
 
@@ -104,7 +105,7 @@ export function TweaksPanel({ t, setTweak }: { t: Tweaks; setTweak: <K extends k
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {ACCENTS.map((a) => (
                 <button key={a.v} onClick={() => setTweak("accent", a.v)} title={a.n}
-                  style={{ width: 26, height: 26, borderRadius: 7, background: a.v, cursor: "pointer",
+                  style={{ width: 26, height: 26, borderRadius: "var(--r-md)", background: a.v, cursor: "pointer",
                     border: t.accent === a.v ? "2px solid var(--panel)" : "2px solid transparent",
                     boxShadow: t.accent === a.v ? "0 0 0 2px rgba(127,127,127,0.5)" : "none" }} />
               ))}
@@ -116,7 +117,7 @@ export function TweaksPanel({ t, setTweak }: { t: Tweaks; setTweak: <K extends k
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
               {COLORMAP_NAMES.map((m) => (
                 <button key={m} onClick={() => setTweak("colormap", m)} title={m}
-                  style={{ border: t.colormap === m ? "2px solid var(--accent)" : "2px solid transparent", borderRadius: 6, padding: 0, cursor: "pointer", lineHeight: 0, overflow: "hidden" }}>
+                  style={{ border: t.colormap === m ? "2px solid var(--accent)" : "2px solid transparent", borderRadius: "var(--r-sm)", padding: 0, cursor: "pointer", lineHeight: 0, overflow: "hidden" }}>
                   <ColormapSwatch map={m} w={38} h={20} />
                 </button>
               ))}

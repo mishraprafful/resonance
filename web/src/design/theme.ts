@@ -1,11 +1,11 @@
-// Theme tokens, run colors, and number formatting — the Epidemic Sound-grounded design system.
+// Theme tokens, run colors, and number formatting for the Resonance Signal design system.
 // themeVars() builds the CSS custom properties consumed (as `var(--token)`) across every component.
 
 export type Density = "compact" | "balanced" | "comfy";
 export type ChartStyle = "line" | "area" | "bold";
 export type LayoutVariant = "topnav" | "sidebar";
 export type RunsViewMode = "table" | "cards";
-export type ColormapName = "viridis" | "magma" | "grayscale" | "azure" | "ember";
+export type ColormapName = "signal" | "viridis" | "magma" | "grayscale" | "azure" | "ember";
 
 export interface Tweaks {
   dark: boolean;
@@ -18,12 +18,12 @@ export interface Tweaks {
 }
 
 export const TWEAK_DEFAULTS: Tweaks = {
-  dark: false,
-  accent: "#20afff",
+  dark: true,
+  accent: "#8b7bff",
   density: "balanced",
-  chartStyle: "area",
-  colormap: "magma",
-  layout: "topnav",
+  chartStyle: "line",
+  colormap: "signal",
+  layout: "sidebar",
   runsView: "table",
 };
 
@@ -39,19 +39,19 @@ export function contrastInk(hex: string): string {
 // Build the CSS custom-property bag for the active tweaks. Spread onto a root element's style.
 export function themeVars(t: Tweaks): React.CSSProperties {
   const dark = t.dark;
-  const accent = t.accent || "#20afff";
+  const accent = t.accent || "#8b7bff";
   const base = dark
     ? {
-        bg: "#191b20", panel: "#23262d", panel2: "#2b2f37", panel3: "#31353e",
-        ink: "#f1f0eb", inkStrong: "#ffffff", muted: "#969cab", faint: "#6b7180",
-        line: "rgba(255,255,255,0.10)", lineSoft: "rgba(255,255,255,0.055)",
-        shadow: "0 12px 32px rgba(0,0,0,0.5)", scrim: "rgba(0,0,0,0.6)",
+        bg: "#0a0c10", panel: "#11141a", panel2: "#161a22", panel3: "#1d222c",
+        ink: "#d9dee8", inkStrong: "#f5f7fb", muted: "#8a93a6", faint: "#5b6375",
+        line: "rgba(148,163,184,0.14)", lineSoft: "rgba(148,163,184,0.07)", grid: "rgba(148,163,184,0.045)",
+        shadow: "0 18px 48px rgba(0,0,0,0.55)", scrim: "rgba(3,4,8,0.7)",
       }
     : {
-        bg: "#f1f0eb", panel: "#ffffff", panel2: "#f6f5f0", panel3: "#efede6",
-        ink: "#292c33", inkStrong: "#000000", muted: "#5a5e6a", faint: "#8a8e98",
-        line: "rgba(0,0,0,0.11)", lineSoft: "rgba(0,0,0,0.055)",
-        shadow: "0 12px 32px rgba(0,0,0,0.14)", scrim: "rgba(0,0,0,0.4)",
+        bg: "#f4f5f8", panel: "#ffffff", panel2: "#f7f8fb", panel3: "#eceef3",
+        ink: "#1a1f2b", inkStrong: "#0a0d14", muted: "#586174", faint: "#8a92a3",
+        line: "rgba(15,23,42,0.12)", lineSoft: "rgba(15,23,42,0.06)", grid: "rgba(15,23,42,0.04)",
+        shadow: "0 18px 48px rgba(15,23,42,0.14)", scrim: "rgba(15,23,42,0.45)",
       };
   const dens =
     t.density === "compact"
@@ -62,18 +62,22 @@ export function themeVars(t: Tweaks): React.CSSProperties {
   return {
     "--bg": base.bg, "--panel": base.panel, "--panel-2": base.panel2, "--panel-3": base.panel3,
     "--ink": base.ink, "--ink-strong": base.inkStrong, "--muted": base.muted, "--faint": base.faint,
-    "--line": base.line, "--line-soft": base.lineSoft, "--shadow": base.shadow, "--scrim": base.scrim,
-    "--accent": accent, "--accent-ink": contrastInk(accent),
+    "--line": base.line, "--line-soft": base.lineSoft, "--grid": base.grid, "--shadow": base.shadow, "--scrim": base.scrim,
+    "--accent": accent, "--accent-ink": contrastInk(accent), "--accent-2": dark ? "#2de2c4" : "#0d9488",
+    "--accent-soft": `color-mix(in srgb, ${accent} 14%, transparent)`,
     "--row-h": dens.rowH + "px", "--pad": dens.pad + "px", "--gap": dens.gap + "px", "--fs": dens.fs + "px",
-    "--ok": dark ? "#5ad363" : "#1f9d4d", "--warn": "#ff9b26", "--bad": "#ff6138",
-    "--mono": "ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace",
+    "--ok": dark ? "#34d399" : "#0f9f6e", "--warn": dark ? "#fbbf24" : "#d97706", "--bad": dark ? "#f87171" : "#dc2626",
+    "--r-sm": "4px", "--r-md": "6px", "--r-lg": "10px",
+    "--font-display": "'Space Grotesk', 'IBM Plex Sans', system-ui, sans-serif",
+    "--font-body": "'IBM Plex Sans', system-ui, sans-serif",
+    "--font-cta": "'Space Grotesk', 'IBM Plex Sans', sans-serif",
+    "--mono": "'IBM Plex Mono', ui-monospace, Menlo, monospace",
   } as React.CSSProperties;
 }
 
-// Stable per-run colors from the extended ES palette.
 const RUN_PALETTE = [
-  "#20afff", "#ff82c2", "#5ad363", "#bb76ff", "#ff9b26",
-  "#ffda40", "#6792ff", "#ff6138", "#91ceda", "#d6832b",
+  "#8b7bff", "#2de2c4", "#fbbf24", "#f472b6", "#60a5fa",
+  "#a3e635", "#fb923c", "#c084fc", "#22d3ee", "#f87171",
 ];
 export function runColor(runId: string): string {
   let h = 0;
@@ -82,8 +86,8 @@ export function runColor(runId: string): string {
 }
 
 export const ACCENTS: { v: string; n: string }[] = [
-  { v: "#20afff", n: "Azure" }, { v: "#ff82c2", n: "Pink" }, { v: "#5ad363", n: "Green" },
-  { v: "#bb76ff", n: "Purple" }, { v: "#ff9b26", n: "Orange" }, { v: "#ffda40", n: "Yellow" },
+  { v: "#8b7bff", n: "Violet" }, { v: "#2de2c4", n: "Teal" }, { v: "#60a5fa", n: "Sky" },
+  { v: "#a3e635", n: "Lime" }, { v: "#fbbf24", n: "Amber" }, { v: "#f472b6", n: "Rose" },
 ];
 
 // Number / time formatting helpers.
