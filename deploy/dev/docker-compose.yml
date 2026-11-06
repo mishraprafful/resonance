@@ -113,7 +113,8 @@ services:
 
   # --- Audio/blob plane ---
   minio:
-    image: minio/minio:latest
+    image: cgr.dev/chainguard/minio:latest
+    user: root
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: resonance
@@ -131,7 +132,7 @@ services:
 
   # Create the default bucket on startup.
   minio-init:
-    image: minio/mc:latest
+    image: cgr.dev/chainguard/minio:latest
     depends_on:
       minio:
         condition: service_healthy
