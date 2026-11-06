@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { api, type Dataset, type DatasetDetail } from "./api";
 import { fmt } from "./design/theme";
 import { Icon } from "./design/icons";
-import { Badge, Empty, Tag } from "./design/ui";
+import { Badge, Empty, PageTitle, Tag } from "./design/ui";
 import { playBtnStyle, useAudioPlayer } from "./design/audioviz";
 
 export function DatasetsPage() {
@@ -35,7 +35,7 @@ export function DatasetsPage() {
   return (
     <div>
       <div style={{ marginBottom: 18 }}>
-        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 34, fontWeight: 500, letterSpacing: "-0.03em", margin: 0, color: "var(--ink-strong)" }}>Datasets</h1>
+        <PageTitle eyebrow="Content-addressed">Datasets</PageTitle>
         <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 14 }}>Content-addressed dataset versions. Identical content across runs is stored once.</p>
       </div>
 
@@ -46,7 +46,7 @@ export function DatasetsPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {datasets.map((d) => (
               <button key={d.id} onClick={() => setOpenId(d.id)}
-                style={{ textAlign: "left", border: `1px solid ${openId === d.id ? "var(--accent)" : "var(--line)"}`, background: "var(--panel)", borderRadius: 12, padding: 14, cursor: "pointer" }}>
+                style={{ textAlign: "left", border: `1px solid ${openId === d.id ? "var(--accent)" : "var(--line)"}`, background: "var(--panel)", borderRadius: "var(--r-lg)", padding: 14, cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                   <Icon name="database" size={16} style={{ color: "var(--accent)" }} />
                   <span style={{ fontWeight: 600, color: "var(--ink-strong)", fontSize: 14 }}>{d.name}</span>
@@ -92,7 +92,7 @@ function DatasetItemCard({ sha, path, size }: { sha: string; path: string; size?
     };
   }, [sha]);
   return (
-    <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 10, padding: 12 }}>
+    <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", padding: 12 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <button onClick={toggle} disabled={!url} style={{ ...playBtnStyle(32), opacity: url ? 1 : 0.5 }}>
           <Icon name={playing ? "pause" : "play"} size={14} fill={playing ? "none" : "current"} stroke={playing ? 2.4 : 0} />

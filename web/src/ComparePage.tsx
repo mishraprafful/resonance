@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type AudioEntry, type MetricPoint, type Project } from "./api";
 import { fmt, runColor, type ChartStyle, type ColormapName } from "./design/theme";
 import { Icon } from "./design/icons";
-import { Btn, Empty, RunChip, Segmented } from "./design/ui";
+import { Btn, Empty, PageTitle, RunChip, Segmented } from "./design/ui";
 import { MetricChart, Spectrogram, Waveform, playBtnStyle, transportProgress, useTransport, type ChartSeries } from "./design/audioviz";
 import { fetchAllEntries } from "./audioData";
 import { colLabel, fmtMetric, isLrMetric, useEnrichedRuns, type EnrichedRun } from "./runsData";
@@ -39,7 +39,7 @@ export function ComparePage({
     <div>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 18, gap: 16, flexWrap: "wrap" }}>
         <div>
-          <h1 style={{ fontFamily: "var(--font-display)", fontSize: 34, fontWeight: 500, letterSpacing: "-0.03em", margin: 0, color: "var(--ink-strong)" }}>Compare</h1>
+          <PageTitle eyebrow="A/B · original quality">Compare</PageTitle>
           <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 14 }}>{project.name} · {selRuns.length} runs selected</p>
         </div>
         <Segmented value={tab} onChange={setTab} options={[
@@ -118,7 +118,7 @@ function CompareMetrics({ runs, chartStyle }: { runs: EnrichedRun[]; chartStyle:
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
       {cols.length > 0 && (
-        <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
               <thead>
@@ -150,7 +150,7 @@ function CompareMetrics({ runs, chartStyle }: { runs: EnrichedRun[]; chartStyle:
             .map((r) => ({ name: r.display_name ?? r.id, color: runColor(r.id), points: data[`${r.id}::${n}`] || [] }))
             .filter((s) => s.points.length);
           return (
-            <div key={n} style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
+            <div key={n} style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", padding: 14 }}>
               <div style={{ fontFamily: "var(--mono)", fontSize: 12.5, color: "var(--muted)", marginBottom: 6 }}>{n}</div>
               <MetricChart series={series} style={chartStyle} yKind={isLrMetric(n) ? "lr" : undefined} height={170} />
             </div>
@@ -260,7 +260,7 @@ function ABPlayer({ runs, colormap }: { runs: EnrichedRun[]; colormap: ColormapN
         </div>
       </div>
 
-      <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, padding: 16, marginBottom: 14 }}>
+      <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", padding: 16, marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <button onClick={() => (playing ? pause() : play())} style={playBtnStyle(48)}>
             <Icon name={playing ? "pause" : "play"} size={20} fill={playing ? "none" : "current"} stroke={playing ? 2.4 : 0} />
@@ -284,7 +284,7 @@ function ABPlayer({ runs, colormap }: { runs: EnrichedRun[]; colormap: ColormapN
           const label = blind && !revealed ? `Track ${String.fromCharCode(65 + i)}` : t.label;
           const col = blind && !revealed ? "var(--muted)" : runColor(t.runId);
           return (
-            <div key={t.uid} style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
+            <div key={t.uid} style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", padding: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                   <span style={{ width: 10, height: 10, borderRadius: 3, background: col }} />
@@ -324,7 +324,7 @@ function ABPlayer({ runs, colormap }: { runs: EnrichedRun[]; colormap: ColormapN
 function BlindResults({ tracks, runs, scores }: { tracks: Track[]; runs: EnrichedRun[]; scores: Record<string, number> }) {
   const ranked = [...tracks].sort((a, b) => (scores[b.uid] || 0) - (scores[a.uid] || 0));
   return (
-    <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, padding: 16, marginTop: 14 }}>
+    <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", padding: 16, marginTop: 14 }}>
       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 12 }}>Blind test results · logged to /v1/ratings</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {ranked.map((t, i) => {
@@ -408,7 +408,7 @@ function PromptGrid({ runs, colormap }: { runs: EnrichedRun[]; colormap: Colorma
         {tracks.map((t) => {
           const run = runs.find((r) => r.id === t.runId);
           return (
-            <div key={t.uid} style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
+            <div key={t.uid} style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", padding: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 {run && <RunChip run={run} />}
                 {t.step != null && <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--faint)" }}>step {fmt.step(t.step)}</span>}

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { Project } from "./api";
 import { fmt, runColor, type ColormapName } from "./design/theme";
 import { Icon } from "./design/icons";
-import { Btn, Empty, ProgressBar, RunChip, Sparkline, StatTile, StatusDot, Tag, ViewToggle } from "./design/ui";
+import { Btn, Empty, PageTitle, ProgressBar, RunChip, Sparkline, StatTile, StatusDot, Tag, ViewToggle } from "./design/ui";
 import { Spectrogram } from "./design/audioviz";
 import { useHeroSpectrogram } from "./audioData";
 import { fmtMetric, useEnrichedRuns, type EnrichedRun, type EvalCol } from "./runsData";
@@ -61,7 +61,7 @@ export function RunsView({
     <div>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 20, gap: 16, flexWrap: "wrap" }}>
         <div>
-          <h1 style={{ fontFamily: "var(--font-display)", fontSize: 38, fontWeight: 500, letterSpacing: "-0.03em", lineHeight: 1, margin: 0, color: "var(--ink-strong)" }}>{project.name}</h1>
+          <PageTitle eyebrow="Project" size={36}>{project.name}</PageTitle>
           <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 14, maxWidth: 560 }}>
             <span style={{ fontFamily: "var(--mono)" }}>{project.slug}</span> · {runs.length} runs · created {fmt.ago(project.created_at)}
           </p>
@@ -86,15 +86,15 @@ export function RunsView({
 
       {/* toolbar */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 7, padding: "7px 11px", minWidth: 220, flex: "0 1 280px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-md)", padding: "7px 11px", minWidth: 220, flex: "0 1 280px" }}>
           <Icon name="search" size={15} style={{ color: "var(--faint)" }} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search runs or models…"
             style={{ border: 0, outline: 0, background: "transparent", color: "var(--ink)", fontSize: 13.5, fontFamily: "var(--font-body)", width: "100%" }} />
         </div>
-        <div style={{ display: "flex", gap: 4, background: "var(--panel-2)", padding: 3, borderRadius: 8, border: "1px solid var(--line-soft)" }}>
+        <div style={{ display: "flex", gap: 4, background: "var(--panel-2)", padding: 3, borderRadius: "var(--r-md)", border: "1px solid var(--line-soft)" }}>
           {["all", "running", "finished", "failed"].map((s) => (
             <button key={s} onClick={() => setStateFilter(s)}
-              style={{ border: 0, cursor: "pointer", padding: "6px 11px", borderRadius: 6, fontSize: 12.5, fontWeight: 600, textTransform: "capitalize",
+              style={{ border: 0, cursor: "pointer", padding: "6px 11px", borderRadius: "var(--r-sm)", fontSize: 12.5, fontWeight: 600, textTransform: "capitalize",
                 background: stateFilter === s ? "var(--panel)" : "transparent", color: stateFilter === s ? "var(--ink)" : "var(--muted)" }}>{s}</button>
           ))}
         </div>
@@ -133,7 +133,7 @@ function RunsTable({
     </th>
   );
   return (
-    <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
+    <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs)" }}>
           <thead>
@@ -190,7 +190,7 @@ function RunCard({ run, cols, bests, onOpenRun, colormap }: { run: EnrichedRun; 
   const heroUrl = useHeroSpectrogram(run.id);
   return (
     <div onClick={() => onOpenRun(run.id)} className="res-card"
-      style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, padding: 16, cursor: "pointer", display: "flex", flexDirection: "column", gap: 12 }}>
+      style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", padding: 16, cursor: "pointer", display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
         <div>
           <RunChip run={run} />
@@ -202,7 +202,7 @@ function RunCard({ run, cols, bests, onOpenRun, colormap }: { run: EnrichedRun; 
         </div>
         <StatusDot state={run.state} />
       </div>
-      <div style={{ borderRadius: 6, overflow: "hidden", border: "1px solid var(--line-soft)" }}>
+      <div style={{ borderRadius: "var(--r-sm)", overflow: "hidden", border: "1px solid var(--line-soft)" }}>
         <Spectrogram imageUrl={heroUrl} colormap={colormap} height={56} />
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
