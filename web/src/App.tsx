@@ -381,14 +381,16 @@ function Shell({ me, reload, t }: { me: Me; reload: () => void; t: Tweaks }) {
   );
 }
 
-export function App() {
+function Workspace({ me, reload }: { me: Me; reload: () => void }) {
   const [t, setTweak] = useTweaks();
   return (
     <div style={{ ...themeVars(t), background: "var(--bg)", color: "var(--ink)", minHeight: "100vh", fontFamily: "var(--font-body)", fontSize: "var(--fs)", letterSpacing: "-0.01em" }}>
-      <AuthGate colormap={t.colormap}>
-        {(me, reload) => <Shell key={me.current_org ?? "none"} me={me} reload={reload} t={t} />}
-      </AuthGate>
+      <Shell key={me.current_org ?? "none"} me={me} reload={reload} t={t} />
       <TweaksPanel t={t} setTweak={setTweak} />
     </div>
   );
+}
+
+export function App() {
+  return <AuthGate>{(me, reload) => <Workspace me={me} reload={reload} />}</AuthGate>;
 }
