@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Resonance · ML experiment tracking for audio and video</title>
+    <meta name="description" content="Self-hosted, multi-tenant ML experiment tracking built to stay resilient under audio and video load: non-blocking SDK, content-addressed media, audio-native UI." />
+    <link rel="icon" type="image/svg+xml" href="logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <div class="wrap">
+        <a class="brand" href="#top"><img src="logo.svg" alt="" />Resonance</a>
+        <nav class="nav-links">
+          <a href="#features">Features</a>
+          <a href="#architecture">Architecture</a>
+          <a href="#quickstart">Quickstart</a>
+          <a href="#capacity">Capacity</a>
+          <a href="#roadmap">Roadmap</a>
+        </nav>
+        <span class="nav-spacer"></span>
+        <a class="btn btn-ghost" href="https://github.com/mishraprafful/resonance">GitHub</a>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero grid-bg">
+        <div class="wrap">
+          <div>
+            <span class="eyebrow">Self-hosted ML experiment tracking</span>
+            <h1>Experiment tracking that holds up under <span class="hl">audio and video</span> load.</h1>
+            <p class="lede">
+              Resonance is a multi-tenant Weights &amp; Biases replacement built to stay fast and correct when
+              training runs log media at scale. Metrics, configs and per-step audio stream out of your
+              training loop without ever blocking it, then you listen, scrub and A/B compare in the browser.
+            </p>
+            <div class="ctas">
+              <a class="btn btn-primary" href="#quickstart">Get started</a>
+              <a class="btn btn-ghost" href="https://github.com/mishraprafful/resonance/blob/main/ARCHITECTURE.md">Read the architecture</a>
+            </div>
+            <p class="fine">Postgres · ClickHouse · S3-compatible storage · Go + Python services</p>
+          </div>
+
+          <div class="console" aria-label="Audio sample viewer preview">
+            <div class="console-bar">
+              <span>hifigan-vocoder /</span><span class="key">samples/val</span>
+              <span class="pill">running</span>
+            </div>
+            <div class="console-body">
+              <div class="viz"><canvas id="wave"></canvas><span class="playhead" data-playhead></span></div>
+              <div class="viz"><canvas id="spec"></canvas><span class="playhead" data-playhead></span></div>
+              <label class="scrub">
+                <span>step</span>
+                <input id="step" type="range" min="0" max="200" value="40" />
+                <output id="step-out">40 / 200</output>
+              </label>
+              <div class="ab">
+                <div><span>A · output</span><b>original wav</b></div>
+                <div><span>B · reference</span><b>sha256 dedup</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="strip">
+        <div class="wrap">
+          <div class="stat"><div class="v">0 bytes</div><div class="k">re-uploaded when identical media is logged again</div></div>
+          <div class="stat"><div class="v">3 planes</div><div class="k">metadata, metrics and media isolated by design</div></div>
+          <div class="stat"><div class="v">≥ 3 min</div><div class="k">long-form clips streamed and compared at original quality</div></div>
+          <div class="stat"><div class="v">1M pts/s</div><div class="k">metric ingest design target, certification pending</div></div>
+        </div>
+      </div>
+
+      <section class="block" id="features">
+        <div class="wrap">
+          <div class="head">
+            <span class="eyebrow">Why Resonance</span>
+            <h2>Media is a typed, first-class artifact, not an opaque file.</h2>
+            <p>Generic trackers bolt audio on as blobs: slow playback, no dedup, no precomputed views, storage bills that grow with every run. Resonance is built around the media path.</p>
+          </div>
+          <div class="features">
+            <article class="feature">
+              <span class="ix">01 / SDK</span>
+              <h3>Never blocks training</h3>
+              <p><code>log</code> and <code>log_audio</code> return immediately. Hashing, batching and upload run on a background thread, backed by a crash-safe local spool. Offline mode needs no network at all.</p>
+            </article>
+            <article class="feature">
+              <span class="ix">02 / Storage</span>
+              <h3>Content-addressed and deduplicated</h3>
+              <p>Every clip is keyed by its sha256. Existence is checked before upload, so a reference logged a thousand times is stored once.</p>
+            </article>
+            <article class="feature">
+              <span class="ix">03 / Upload</span>
+              <h3>Bytes bypass the API</h3>
+              <p>Clients upload straight to object storage with presigned URLs. A Go media gateway range-streams originals with HMAC-signed, CDN-cacheable links.</p>
+            </article>
+            <article class="feature">
+              <span class="ix">04 / UI</span>
+              <h3>Audio-native views</h3>
+              <p>Workers precompute waveform peaks and spectrograms, so the browser never decodes audio just to draw it. Scrub samples across training steps.</p>
+            </article>
+            <article class="feature">
+              <span class="ix">05 / Compare</span>
+              <h3>A/B and blind tests</h3>
+              <p>Synced A/B comparison and blind listening tests always play original-quality audio, never a lossy rendition. Ratings are logged.</p>
+            </article>
+            <article class="feature">
+              <span class="ix">06 / Tenancy</span>
+              <h3>Hard multi-tenant isolation</h3>
+              <p>Teams, hashed API tokens and RBAC, enforced twice: app-level scoping plus Postgres row-level security. Per-team storage quotas and tiering policies, plus rate limiting.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="block grid-bg" id="architecture">
+        <div class="wrap">
+          <div class="head">
+            <span class="eyebrow">Architecture</span>
+            <h2>Three data planes that scale independently.</h2>
+            <p>Each kind of data lives in the store built for it, so a burst of media uploads can never slow down metric ingest or the control plane.</p>
+          </div>
+          <div class="arch">
+            <div class="lane">
+              <div class="lane-name">Metrics<b>Time-series</b></div>
+              <div class="flow">
+                <span class="node">Python SDK<small>batched, async</small></span><span class="arrow">→</span>
+                <span class="node">Ingest gateway<small>Go, stateless, load-shedding</small></span><span class="arrow">→</span>
+                <span class="node store">ClickHouse<small>sharded by run_id</small></span>
+              </div>
+            </div>
+            <div class="lane">
+              <div class="lane-name">Metadata<b>Relational</b></div>
+              <div class="flow">
+                <span class="node">Python SDK<small>init, config</small></span><span class="arrow">→</span>
+                <span class="node">Control API<small>FastAPI, RBAC</small></span><span class="arrow">→</span>
+                <span class="node store">Postgres<small>row-level security</small></span>
+              </div>
+            </div>
+            <div class="lane">
+              <div class="lane-name">Media<b>Content-addressed</b></div>
+              <div class="flow">
+                <span class="node">Python SDK<small>sha256 + dedup check</small></span><span class="arrow">→</span>
+                <span class="node store">Object store<small>presigned PUT, tiered</small></span><span class="arrow">→</span>
+                <span class="node">Workers<small>peaks, spectrograms</small></span><span class="arrow">→</span>
+                <span class="node">Media gateway<small>range streaming</small></span>
+              </div>
+            </div>
+          </div>
+          <p class="arch-note"><b>Event-driven derivation:</b> new assets publish to Redpanda for fast processing, with a Postgres work queue as the correctness backstop. Derivation is idempotent across both paths.</p>
+        </div>
+      </section>
+
+      <section class="block" id="quickstart">
+        <div class="wrap">
+          <div class="head">
+            <span class="eyebrow">Quickstart</span>
+            <h2>One command up, three lines to log.</h2>
+            <p>The dev stack runs every service locally with Docker. Point the SDK at it and log your first run.</p>
+          </div>
+          <div class="qs">
+            <div class="code">
+              <div class="code-head"><span>terminal</span><button class="copy" data-copy="qs-shell">copy</button></div>
+<pre id="qs-shell"><span class="t-k">git</span> clone https://github.com/mishraprafful/resonance
+<span class="t-k">cd</span> resonance
+<span class="t-k">make</span> up
+<span class="t-k">make</span> demo</pre>
+            </div>
+            <div class="code">
+              <div class="code-head"><span>train.py</span><button class="copy" data-copy="qs-py">copy</button></div>
+<pre id="qs-py"><span class="t-k">import</span> resonance
+
+run = resonance.init(project=<span class="t-s">"vocoder"</span>, config={<span class="t-s">"lr"</span>: <span class="t-n">3e-4</span>})
+<span class="t-k">for</span> step <span class="t-k">in</span> range(steps):
+    run.log({<span class="t-s">"loss/mel"</span>: mel}, step=step)
+    <span class="t-k">if</span> step % <span class="t-n">500</span> == <span class="t-n">0</span>:
+        run.log_audio(<span class="t-s">"samples/val"</span>, audio, sample_rate=<span class="t-n">22050</span>,
+                      step=step, reference=ref)
+run.finish()</pre>
+            </div>
+          </div>
+          <div class="qs-notes">
+            <div><b>make up</b>Postgres, ClickHouse, MinIO, Redpanda and Redis, plus ingest, API, media, workers and the UI on localhost:5280.</div>
+            <div><b>make demo</b>Logs sample vocoder runs with full-length audio so the compare view has real material.</div>
+            <div><b>RESONANCE_MODE=online</b>Streams to the running stack. The default offline mode spools runs to ./.resonance instead.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block grid-bg" id="capacity">
+        <div class="wrap">
+          <div class="head">
+            <span class="eyebrow">Capacity</span>
+            <h2>Performance claims are earned, not asserted.</h2>
+            <p>These are the design targets. A k6 suite gates the hot paths, and a number only moves to the certified column after a passing run on the reference rig.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="capacity">
+              <thead><tr><th>Dimension</th><th>Design target</th><th>Certified</th><th>SLO gate</th></tr></thead>
+              <tbody>
+                <tr><td>Metric ingest</td><td>1,000,000 points/sec</td><td class="pending">pending</td><td>p95 &lt; 50 ms, err &lt; 0.1%</td></tr>
+                <tr><td>Concurrent active runs</td><td>50,000</td><td class="pending">pending</td><td>n/a</td></tr>
+                <tr><td>Audio upload coordination</td><td>5,000 prepare req/sec</td><td class="pending">pending</td><td>prepare p95 &lt; 75 ms</td></tr>
+                <tr><td>Audio ingest (post-dedup)</td><td>2 GB/sec to object store</td><td class="pending">pending</td><td>bytes bypass the gateway</td></tr>
+                <tr><td>Stored media</td><td>PB-scale with tiering</td><td class="pending">pending</td><td>n/a</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="cap-note">Targets mirror the certified-capacity table in the README.</p>
+        </div>
+      </section>
+
+      <section class="block" id="roadmap">
+        <div class="wrap">
+          <div class="head">
+            <span class="eyebrow">Roadmap</span>
+            <h2>Shipped in phases, each one usable.</h2>
+          </div>
+          <div class="roadmap">
+            <div class="phase"><span class="n">PHASE 0</span><h3>Scaffolding</h3><p>Monorepo, dev stack, CI, load-test harness.</p><span class="chip done">shipped</span></div>
+            <div class="phase"><span class="n">PHASE 1</span><h3>Tracking MVP</h3><p>SDK, Go ingest, ClickHouse metrics, live charts.</p><span class="chip done">shipped</span></div>
+            <div class="phase"><span class="n">PHASE 2</span><h3>Audio first-class</h3><p>Dedup uploads, derivation workers, audio panel.</p><span class="chip done">shipped</span></div>
+            <div class="phase"><span class="n">PHASE 3</span><h3>Audio UX depth</h3><p>A/B and blind compare, lazy pagination, datasets.</p><span class="chip done">shipped</span></div>
+            <div class="phase"><span class="n">PHASE 4</span><h3>Multi-tenancy</h3><p>Tokens, RBAC, RLS, quotas, rate limits, browser auth.</p><span class="chip done">shipped</span></div>
+            <div class="phase now"><span class="n">PHASE 5</span><h3>Scale and ops</h3><p>Media gateway, sharding and tiering shipped. Autoscaling, observability, SSO next.</p><span class="chip now">in progress</span></div>
+            <div class="phase"><span class="n">PHASE 6</span><h3>Video first-class</h3><p>Typed video logging, previews and streaming on the same media path.</p><span class="chip next">planned</span></div>
+            <div class="phase"><span class="n">ALWAYS</span><h3>Capacity certification</h3><p>Re-certify the hot paths whenever they change.</p><span class="chip next">ongoing</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block" style="padding-top: 0">
+        <div class="wrap">
+          <div class="cta-band">
+            <div>
+              <h2>Run it on your own infrastructure.</h2>
+              <p>Stateless Go and Python services, S3-compatible storage, no vendor lock-in.</p>
+            </div>
+            <a class="btn btn-primary" href="https://github.com/mishraprafful/resonance">View on GitHub</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap">
+        <span class="brand"><img src="logo.svg" alt="" />Resonance</span>
+        <span>Self-hosted ML experiment tracking for audio and video.</span>
+        <a href="https://github.com/mishraprafful/resonance/blob/main/ARCHITECTURE.md">Architecture</a>
+      </div>
+    </footer>
+
+    <script src="main.js" defer></script>
+  </body>
+</html>
