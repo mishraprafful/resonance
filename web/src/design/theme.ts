@@ -6,9 +6,11 @@ export type ChartStyle = "line" | "area" | "bold";
 export type LayoutVariant = "topnav" | "sidebar";
 export type RunsViewMode = "table" | "cards";
 export type ColormapName = "signal" | "viridis" | "magma" | "grayscale" | "azure" | "ember";
+export type ThemeChoice = "system" | "light" | "dark";
+export const THEME_CHOICES: ThemeChoice[] = ["system", "light", "dark"];
 
 export interface Tweaks {
-  dark: boolean;
+  theme: ThemeChoice;
   accent: string;
   density: Density;
   chartStyle: ChartStyle;
@@ -18,7 +20,7 @@ export interface Tweaks {
 }
 
 export const TWEAK_DEFAULTS: Tweaks = {
-  dark: true,
+  theme: "system",
   accent: "#8b7bff",
   density: "balanced",
   chartStyle: "line",
@@ -37,8 +39,7 @@ export function contrastInk(hex: string): string {
 }
 
 // Build the CSS custom-property bag for the active tweaks. Spread onto a root element's style.
-export function themeVars(t: Tweaks): React.CSSProperties {
-  const dark = t.dark;
+export function themeVars(t: Tweaks, dark: boolean): React.CSSProperties {
   const accent = accentFor(t.accent || "#8b7bff", dark);
   const base = dark
     ? {

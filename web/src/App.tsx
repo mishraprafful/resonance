@@ -6,7 +6,7 @@ import { api, ApiError, type Me, type Project } from "./api";
 import { fmt, setRunPalette, themeVars, type Tweaks } from "./design/theme";
 import { Icon } from "./design/icons";
 import { BrandMark, Btn, ConfirmDialog, Empty, PageTitle } from "./design/ui";
-import { useTweaks, TweaksPanel } from "./design/tweaks";
+import { useSystemDark, useTweaks, TweaksPanel } from "./design/tweaks";
 import { AuthGate } from "./Auth";
 import { RunsView } from "./RunsView";
 import { RunDetail } from "./RunDetail";
@@ -394,11 +394,13 @@ function Shell({ me, reload, t }: { me: Me; reload: () => void; t: Tweaks }) {
 
 function Workspace({ me, reload }: { me: Me; reload: () => void }) {
   const [t, setTweak] = useTweaks();
-  setRunPalette(t.dark);
+  const systemDark = useSystemDark();
+  const dark = t.theme === "system" ? systemDark : t.theme === "dark";
+  setRunPalette(dark);
   return (
-    <div style={{ ...themeVars(t), background: "var(--bg)", color: "var(--ink)", minHeight: "100vh", fontFamily: "var(--font-body)", fontSize: "var(--fs)", letterSpacing: "-0.01em" }}>
+    <div style={{ ...themeVars(t, dark), colorScheme: dark ? "dark" : "light", background: "var(--bg)", color: "var(--ink)", minHeight: "100vh", fontFamily: "var(--font-body)", fontSize: "var(--fs)", letterSpacing: "-0.01em" }}>
       <Shell key={me.current_org ?? "none"} me={me} reload={reload} t={t} />
-      <TweaksPanel t={t} setTweak={setTweak} />
+      <TweaksPanel t={t} dark={dark} setTweak={setTweak} />
     </div>
   );
 }

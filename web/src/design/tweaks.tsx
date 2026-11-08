@@ -4,16 +4,26 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Icon } from "./icons";
 import { ColormapSwatch } from "./ui";
-import { ACCENTS, TWEAK_DEFAULTS, accentFor, type Tweaks } from "./theme";
+import { ACCENTS, THEME_CHOICES, TWEAK_DEFAULTS, accentFor, type ThemeChoice, type Tweaks } from "./theme";
 import { COLORMAP_NAMES } from "./colormaps";
 
 const STORAGE_KEY = "res_tweaks_v2";
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+
+function migrateTheme(saved: { theme?: unknown; dark?: unknown }): ThemeChoice {
+  if (THEME_CHOICES.includes(saved.theme as ThemeChoice)) return saved.theme as ThemeChoice;
+  if (typeof saved.dark === "boolean") return saved.dark ? "dark" : "light";
+  return TWEAK_DEFAULTS.theme;
+}
 
 export function useTweaks(): [Tweaks, <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => void] {
   const [values, setValues] = useState<Tweaks>(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return { ...TWEAK_DEFAULTS, ...JSON.parse(raw) };
+      if (raw) {
+        const { dark, ...saved } = JSON.parse(raw);
+        return { ...TWEAK_DEFAULTS, ...saved, theme: migrateTheme({ theme: saved.theme, dark }) };
+      }
     } catch {
       /* ignore */
     }
@@ -33,6 +43,17 @@ export function useTweaks(): [Tweaks, <K extends keyof Tweaks>(key: K, value: Tw
   return [values, setTweak];
 }
 
+export function useSystemDark(): boolean {
+  const [dark, setDark] = useState(() => window.matchMedia(DARK_QUERY).matches);
+  useEffect(() => {
+    const query = window.matchMedia(DARK_QUERY);
+    const onChange = () => setDark(query.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return dark;
+}
+
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -42,15 +63,6 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button onClick={() => onChange(!value)} role="switch" aria-checked={value}
-      style={{ position: "relative", width: 38, height: 22, border: 0, borderRadius: 999, cursor: "pointer", padding: 0,
-        background: value ? "var(--accent)" : "var(--panel-3)", transition: "background 150ms" }}>
-      <span style={{ position: "absolute", top: 2, left: value ? 18 : 2, width: 18, height: 18, borderRadius: 999, background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,0.3)", transition: "left 150ms" }} />
-    </button>
-  );
-}
 
 function Radio<T extends string>({ value, options, onChange }: { value: T; options: T[]; onChange: (v: T) => void }) {
   return (
@@ -71,7 +83,7 @@ function Section({ label }: { label: string }) {
   return <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-2)", marginTop: 4, paddingTop: 10, borderTop: "1px solid var(--line-soft)" }}>{label}</div>;
 }
 
-export function TweaksPanel({ t, setTweak }: { t: Tweaks; setTweak: <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => void }) {
+export function TweaksPanel({ t, dark, setTweak }: { t: Tweaks; dark: boolean; setTweak: <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => void }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -97,15 +109,12 @@ export function TweaksPanel({ t, setTweak }: { t: Tweaks; setTweak: <K extends k
           </div>
 
           <Section label="Theme" />
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>Dark mode</span>
-            <Toggle value={t.dark} onChange={(v) => setTweak("dark", v)} />
-          </div>
+          <Row label="Mode"><Radio value={t.theme} options={THEME_CHOICES} onChange={(v) => setTweak("theme", v)} /></Row>
           <Row label="Accent">
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {ACCENTS.map((a) => (
                 <button key={a.v} onClick={() => setTweak("accent", a.v)} title={a.n}
-                  style={{ width: 26, height: 26, borderRadius: "var(--r-md)", background: accentFor(a.v, t.dark), cursor: "pointer",
+                  style={{ width: 26, height: 26, borderRadius: "var(--r-md)", background: accentFor(a.v, dark), cursor: "pointer",
                     border: t.accent === a.v ? "2px solid var(--panel)" : "2px solid transparent",
                     boxShadow: t.accent === a.v ? "0 0 0 2px rgba(127,127,127,0.5)" : "none" }} />
               ))}
