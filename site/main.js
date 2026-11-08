@@ -1,25 +1,51 @@
 (() => {
   const STEPS = 200;
-  const RAMP = [
-    [0, [10, 12, 16]],
-    [0.3, [37, 30, 92]],
-    [0.55, [96, 82, 224]],
-    [0.75, [139, 123, 255]],
-    [0.9, [45, 226, 196]],
-    [1, [234, 255, 251]],
-  ];
+  const THEME_KEY = "rsn-theme";
+  const root = document.documentElement;
+  const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  const RAMPS = {
+    dark: [
+      [0, [10, 12, 16]],
+      [0.3, [37, 30, 92]],
+      [0.55, [96, 82, 224]],
+      [0.75, [139, 123, 255]],
+      [0.9, [45, 226, 196]],
+      [1, [234, 255, 251]],
+    ],
+    light: [
+      [0, [238, 240, 245]],
+      [0.3, [221, 214, 254]],
+      [0.55, [139, 123, 255]],
+      [0.75, [91, 71, 224]],
+      [0.9, [15, 118, 110]],
+      [1, [4, 47, 46]],
+    ],
+  };
 
-  function colormap(v) {
+  const probe = document.createElement("span");
+  probe.hidden = true;
+  document.body.appendChild(probe);
+
+  function cssColor(name) {
+    probe.style.color = `var(${name})`;
+    return getComputedStyle(probe).color;
+  }
+
+  function resolvedTheme() {
+    return root.dataset.theme || (darkQuery.matches ? "dark" : "light");
+  }
+
+  function colormap(v, ramp) {
     const x = Math.min(1, Math.max(0, v));
-    for (let i = 1; i < RAMP.length; i++) {
-      const [p1, c1] = RAMP[i];
-      const [p0, c0] = RAMP[i - 1];
+    for (let i = 1; i < ramp.length; i++) {
+      const [p1, c1] = ramp[i];
+      const [p0, c0] = ramp[i - 1];
       if (x <= p1) {
         const t = (x - p0) / (p1 - p0);
         return c0.map((c, k) => c + (c1[k] - c) * t);
       }
     }
-    return RAMP[RAMP.length - 1][1];
+    return ramp[ramp.length - 1][1];
   }
 
   function seeded(seed) {
@@ -48,6 +74,7 @@
     const bins = 90;
     const noise = 0.5 * (1 - step / STEPS) + 0.04;
     const rand = seeded(step);
+    const ramp = RAMPS[resolvedTheme()];
     const img = ctx.createImageData(cols, bins);
     for (let x = 0; x < cols; x++) {
       const t = x / cols;
@@ -60,7 +87,7 @@
           v += Math.exp(-(d * d) / (2.2 + h)) * (1 / h);
         }
         v = v * (0.85 + 0.15 * Math.sin(t * 40)) + noise * rand() * (1 - bin / bins);
-        const [r, g, b] = colormap(Math.pow(v, 0.8));
+        const [r, g, b] = colormap(Math.pow(v, 0.8), ramp);
         const i = (y * cols + x) * 4;
         img.data[i] = r;
         img.data[i + 1] = g;
@@ -87,8 +114,8 @@
     const rand = seeded(step + 1000);
     const noise = 0.45 * (1 - step / STEPS);
     const grad = ctx.createLinearGradient(0, 0, width, 0);
-    grad.addColorStop(0, "#8b7bff");
-    grad.addColorStop(1, "#2de2c4");
+    grad.addColorStop(0, cssColor("--accent"));
+    grad.addColorStop(1, cssColor("--accent-2"));
     ctx.fillStyle = grad;
     for (let i = 0; i < n; i++) {
       const t = i / n;
@@ -134,6 +161,32 @@
       requestAnimationFrame(tick);
     }
   }
+
+  const themeButtons = document.querySelectorAll("[data-theme-choice]");
+
+  function applyTheme(choice) {
+    if (choice === "light" || choice === "dark") root.dataset.theme = choice;
+    else delete root.dataset.theme;
+    themeButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeChoice === choice)));
+    if (wave && spec && slider && out) render();
+  }
+
+  themeButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const choice = btn.dataset.themeChoice;
+      applyTheme(choice);
+      try {
+        if (choice === "system") localStorage.removeItem(THEME_KEY);
+        else localStorage.setItem(THEME_KEY, choice);
+      } catch {}
+    });
+  });
+
+  darkQuery.addEventListener("change", () => {
+    if (!root.dataset.theme && wave && spec && slider && out) render();
+  });
+
+  applyTheme(root.dataset.theme || "system");
 
   document.querySelectorAll("[data-copy]").forEach((btn) => {
     btn.addEventListener("click", async () => {
