@@ -3,7 +3,7 @@
 // datasets / account surfaces. The active team scopes everything; Tweaks control theme & layout.
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, type Me, type Project } from "./api";
-import { fmt, themeVars, type Tweaks } from "./design/theme";
+import { fmt, setRunPalette, themeVars, type Tweaks } from "./design/theme";
 import { Icon } from "./design/icons";
 import { BrandMark, Btn, ConfirmDialog, Empty, PageTitle } from "./design/ui";
 import { useTweaks, TweaksPanel } from "./design/tweaks";
@@ -394,6 +394,7 @@ function Shell({ me, reload, t }: { me: Me; reload: () => void; t: Tweaks }) {
 
 function Workspace({ me, reload }: { me: Me; reload: () => void }) {
   const [t, setTweak] = useTweaks();
+  setRunPalette(t.dark);
   return (
     <div style={{ ...themeVars(t), background: "var(--bg)", color: "var(--ink)", minHeight: "100vh", fontFamily: "var(--font-body)", fontSize: "var(--fs)", letterSpacing: "-0.01em" }}>
       <Shell key={me.current_org ?? "none"} me={me} reload={reload} t={t} />

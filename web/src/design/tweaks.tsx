@@ -4,7 +4,7 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Icon } from "./icons";
 import { ColormapSwatch } from "./ui";
-import { ACCENTS, TWEAK_DEFAULTS, type Tweaks } from "./theme";
+import { ACCENTS, TWEAK_DEFAULTS, accentFor, type Tweaks } from "./theme";
 import { COLORMAP_NAMES } from "./colormaps";
 
 const STORAGE_KEY = "res_tweaks_v2";
@@ -105,7 +105,7 @@ export function TweaksPanel({ t, setTweak }: { t: Tweaks; setTweak: <K extends k
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {ACCENTS.map((a) => (
                 <button key={a.v} onClick={() => setTweak("accent", a.v)} title={a.n}
-                  style={{ width: 26, height: 26, borderRadius: "var(--r-md)", background: a.v, cursor: "pointer",
+                  style={{ width: 26, height: 26, borderRadius: "var(--r-md)", background: accentFor(a.v, t.dark), cursor: "pointer",
                     border: t.accent === a.v ? "2px solid var(--panel)" : "2px solid transparent",
                     boxShadow: t.accent === a.v ? "0 0 0 2px rgba(127,127,127,0.5)" : "none" }} />
               ))}
