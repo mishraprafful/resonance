@@ -4,7 +4,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { api, ApiError, type Me } from "./api";
 import type { ColormapName } from "./design/theme";
 import { Icon } from "./design/icons";
-import { Btn } from "./design/ui";
+import { LegacyBtn, LegacyFrame } from "./design/legacy";
 import { DecorSpectrogram } from "./design/audioviz";
 
 function Field({ label, type = "text", value, onChange, placeholder, autoFocus }: {
@@ -126,9 +126,9 @@ function AuthScreen({ initialMode, onDone, colormap }: { initialMode: Mode; onDo
             )}
 
             {err && <div style={{ color: "var(--bad)", fontSize: 12.5 }}>{err}</div>}
-            <Btn kind="primary" size="lg" onClick={submit} disabled={busy} style={{ justifyContent: "center", marginTop: 2 }}>
+            <LegacyBtn kind="primary" size="lg" onClick={submit} disabled={busy} style={{ justifyContent: "center", marginTop: 2 }}>
               {mode === "bootstrap" ? "Create admin & sign in" : mode === "login" ? "Log in" : "Sign up"}
-            </Btn>
+            </LegacyBtn>
 
             {/* The admin-bootstrap toggle is only offered on first run; once an admin exists the
                 option is gone for good (the backend also rejects bootstrap with 409). */}
@@ -147,7 +147,7 @@ function AuthScreen({ initialMode, onDone, colormap }: { initialMode: Mode; onDo
   );
 }
 
-export function AuthGate({ colormap, children }: { colormap: ColormapName; children: (me: Me, reload: () => void) => ReactNode }) {
+export function AuthGate({ children }: { children: (me: Me, reload: () => void) => ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [phase, setPhase] = useState<"loading" | "bootstrap" | "auth" | "ready">("loading");
 
@@ -169,8 +169,13 @@ export function AuthGate({ colormap, children }: { colormap: ColormapName; child
   };
   useEffect(reload, []);
 
-  if (phase === "loading") return <div style={{ padding: 32, color: "var(--muted)" }}>Loading…</div>;
-  if (phase === "bootstrap") return <AuthScreen initialMode="bootstrap" onDone={reload} colormap={colormap} />;
-  if (phase === "auth") return <AuthScreen initialMode="login" onDone={reload} colormap={colormap} />;
-  return <>{me && children(me, reload)}</>;
+  if (phase === "ready") return <>{me && children(me, reload)}</>;
+  return (
+    <LegacyFrame>
+      {(colormap) =>
+        phase === "loading"
+          ? <div style={{ padding: 32, color: "var(--muted)" }}>Loading…</div>
+          : <AuthScreen initialMode={phase === "bootstrap" ? "bootstrap" : "login"} onDone={reload} colormap={colormap} />}
+    </LegacyFrame>
+  );
 }

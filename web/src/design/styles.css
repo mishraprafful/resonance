@@ -62,6 +62,17 @@ input[type="range"]::-moz-range-thumb {
 
 #root { min-height: 100vh; }
 
+.rsn-grid {
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+.rsn-nav { transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
+.rsn-nav:hover { background: var(--panel-2) !important; color: var(--ink-strong) !important; }
+.rsn-card { transition: border-color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out); }
+.rsn-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, transparent) !important; background: var(--panel-2) !important; }
+
 @media (max-width: 940px) {
   .res-detail-grid { grid-template-columns: 1fr !important; }
 }

@@ -22,6 +22,7 @@ function rampMap(stops: RGB[]): Ramp {
 }
 
 export const COLORMAPS: Record<ColormapName, Ramp> = {
+  signal: rampMap([[10, 12, 16], [37, 30, 92], [96, 82, 224], [139, 123, 255], [45, 226, 196], [234, 255, 251]]),
   viridis: rampMap([[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]]),
   magma: rampMap([[0, 0, 4], [81, 18, 124], [183, 55, 121], [252, 137, 97], [252, 253, 191]]),
   grayscale: rampMap([[8, 8, 10], [120, 120, 124], [245, 245, 245]]),
