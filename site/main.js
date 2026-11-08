@@ -190,7 +190,7 @@
 
   document.querySelectorAll("[data-copy]").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      const src = document.getElementById(btn.dataset.copy);
+      const src = btn.dataset.copy ? document.getElementById(btn.dataset.copy) : btn.closest(".code")?.querySelector("pre");
       if (!src) return;
       try {
         await navigator.clipboard.writeText(src.textContent);
