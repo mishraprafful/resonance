@@ -2,7 +2,7 @@
 COMPOSE := docker compose -f deploy/dev/docker-compose.yml
 
 .PHONY: help site dev-up dev-down dev-logs dev-ps lint test e2e \
-        sdk-install api-install workers-install web-install \
+        sdk-install api-install workers-install ui-install \
         ingest-build media-build
 
 help: ## Show this help
@@ -10,10 +10,10 @@ help: ## Show this help
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 ## --- One-command local app (try it in the browser) ---
-up: dev-up ## Bring up EVERYTHING (stack + services + web) and print the URL
+up: dev-up ## Bring up EVERYTHING (stack + services + ui) and print the URL
 	@bash scripts/dev.sh wait
 	@if ! .venv/bin/python -c "import resonance_api, resonance_workers, uvicorn" >/dev/null 2>&1 \
-		|| [ ! -d web/node_modules ]; then bash scripts/dev.sh venv; fi
+		|| [ ! -d src/ui/node_modules ]; then bash scripts/dev.sh venv; fi
 	@bash scripts/dev.sh start
 	@echo "\n  ▶ Open http://localhost:5280  —  run 'make demo' to populate a sample run\n"
 down: ## Stop the app services AND the dev stack
@@ -24,7 +24,7 @@ demo: ## Log a sample training run (metrics + audio) so the UI has data
 	@RESONANCE_MODE=online RESONANCE_API_URL=http://localhost:8000 \
 	  RESONANCE_INGEST_URL=http://localhost:18080 \
 	  .venv/bin/python examples/train_demo.py
-app-install: ## Create the venv + install python/web deps
+app-install: ## Create the venv + install python/ui deps
 	@bash scripts/dev.sh venv
 app-status: ## Show which app services are running
 	@bash scripts/dev.sh status
@@ -56,8 +56,8 @@ api-install: ## Install the control/query API (editable)
 	cd services/api && pip install -e ".[dev]"
 workers-install: ## Install the audio workers (editable)
 	cd workers && pip install -e ".[dev]"
-web-install: ## Install web deps
-	cd web && npm install
+ui-install: ## Install ui deps
+	cd src/ui && npm install
 ingest-build: ## Build the Go ingestion gateway
 	cd services/ingest && go build ./...
 media-build: ## Build the Go media gateway
@@ -70,7 +70,7 @@ lint: ## Lint everything
 	cd workers && ruff check . || true
 	cd services/ingest && go vet ./... || true
 	cd services/media && go vet ./... || true
-	cd web && npm run lint || true
+	cd src/ui && npm run lint || true
 test: ## Run all tests
 	cd sdk && pytest -q || true
 	cd services/api && pytest -q || true

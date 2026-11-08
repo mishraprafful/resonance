@@ -21,7 +21,7 @@ E2E_PYTEST_ARGS="-k audio -x" ./e2e/run.sh   # focus on one plane, stop on first
 
 `make e2e` is `e2e/run.sh`, which: brings up the docker dev stack → waits for the data planes →
 builds + starts the backend services (`ingest`, `media`, `api`, `worker`) on the host via
-`scripts/dev.sh` (web/vite is skipped via `DEV_SERVICES`) → waits for them → runs `pytest` → tears
+`scripts/dev.sh` (ui/vite is skipped via `DEV_SERVICES`) → waits for them → runs `pytest` → tears
 everything down. Service logs are left under `.run/*.log` on failure.
 
 Requirements: Docker + `docker compose`, Go 1.22, Python 3.11, and `libsndfile` (for `soundfile`).

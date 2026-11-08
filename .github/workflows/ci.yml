@@ -47,16 +47,16 @@ jobs:
         working-directory: ${{ matrix.component }}
         run: go test ./...
 
-  web:
-    name: web
+  ui:
+    name: ui
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - working-directory: web
+      - working-directory: src/ui
         run: npm install
       - name: Typecheck
-        working-directory: web
+        working-directory: src/ui
         run: npm run lint

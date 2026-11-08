@@ -45,7 +45,7 @@ services/ingest/    Go ingestion gateway
 services/api/        Python FastAPI control + query plane
 services/media/      Go streaming/media gateway
 workers/             Python audio derivation workers (transcode, peaks, spectrogram)
-web/                 React + TypeScript UI
+src/ui/              React + TypeScript UI
 deploy/              docker-compose (dev), Helm/Terraform/ArgoCD (prod)
 docs/                additional design notes
 ```
@@ -66,7 +66,7 @@ docs/                additional design notes
 
 ## Dev workflow
 
-- **One command:** `make up` (docker stack + ingest/api/worker/web on the host) → UI on
+- **One command:** `make up` (docker stack + ingest/api/worker/ui on the host) → UI on
   http://localhost:5280; `make demo` logs a sample run; `make down` stops it. `make dev-reset` wipes
   local data after a schema change.
 - After any change, run that component's tests and lint. For features, verify end-to-end against the

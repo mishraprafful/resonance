@@ -260,7 +260,7 @@ Redpanda-backed, autoscaled derivation workers.
 - **Frontend:** React + TypeScript + Vite, WaveSurfer.js, uPlot/visx for charts.
 - **Infra:** Kubernetes, Helm, Terraform, ArgoCD (GitOps), Prometheus/Grafana + OpenTelemetry.
 - **Repo:** monorepo (`sdk/`, `services/ingest`, `services/api`, `services/media`, `workers/`,
-  `web/`, `deploy/`, `loadtest/`, `docs/`).
+  `src/ui/`, `deploy/`, `loadtest/`, `docs/`).
 - **Load testing / capacity certification:** k6 suite in `loadtest/` exercises the two hot paths
   (metric ingest, audio-upload coordination + direct-to-store PUT) with SLO gates. Each release is
   certified against a named reference deployment; certified numbers are published in `README.md`

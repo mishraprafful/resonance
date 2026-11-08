@@ -18,7 +18,7 @@ vendor/
 
 # Node / web
 node_modules/
-web/dist/
+src/ui/dist/
 *.local
 
 # Env / secrets

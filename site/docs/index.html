@@ -130,7 +130,7 @@ cd resonance</pre></div>
               <p><strong>Bring everything up.</strong> The first run takes a few minutes.</p>
               <div class="code"><div class="code-head"><span>terminal</span><button class="copy" data-copy>copy</button></div>
 <pre>make up</pre></div>
-              <p><code>make up</code> starts the data stack in Docker and waits up to about two minutes for it to be ready. It then creates <code>.venv</code> with the API, workers and SDK, runs <code>npm install</code> in <code>web/</code>, builds both Go gateways, and starts ingest, media, API, worker and the web UI. Logs and PID files go to <code>.run/</code>.</p>
+              <p><code>make up</code> starts the data stack in Docker and waits up to about two minutes for it to be ready. It then creates <code>.venv</code> with the API, workers and SDK, runs <code>npm install</code> in <code>src/ui/</code>, builds both Go gateways, and starts ingest, media, API, worker and the web UI. Logs and PID files go to <code>.run/</code>.</p>
               <p>To pick a specific Python, run <code>PYTHON=python3.12 make up</code>.</p>
             </li>
             <li>
@@ -160,7 +160,7 @@ cd resonance</pre></div>
               </tbody>
             </table>
           </div>
-          <div class="callout"><b>Port already taken?</b><p><code>make up</code> checks ports first and tells you which variable to override, for example <code>WEB_PORT=5300 make up</code>. The overridable ports are <code>WEB_PORT</code>, <code>API_PORT</code>, <code>INGEST_HTTP_PORT</code> and <code>MEDIA_PORT</code>.</p></div>
+          <div class="callout"><b>Port already taken?</b><p><code>make up</code> checks ports first and tells you which variable to override, for example <code>UI_PORT=5300 make up</code>. The overridable ports are <code>UI_PORT</code>, <code>API_PORT</code>, <code>INGEST_HTTP_PORT</code> and <code>MEDIA_PORT</code>.</p></div>
           <div class="callout warn"><b>Local only</b><p>The dev stack ships with fixed development credentials. Never expose it to a network. See <a href="#deploying">Deploying</a> before running it anywhere else.</p></div>
         </section>
 
@@ -211,7 +211,7 @@ python train.py</pre></div>
                 <tr><td><code>make down</code></td><td>Stops the services and the data stack. Data is kept.</td></tr>
                 <tr><td><code>make restart</code></td><td><code>make down</code> then <code>make up</code></td></tr>
                 <tr><td><code>make app-status</code></td><td>Shows which services are running</td></tr>
-                <tr><td><code>make app-logs svc=api</code></td><td>Tails a service log: <code>ingest</code>, <code>media</code>, <code>api</code>, <code>worker</code> or <code>web</code></td></tr>
+                <tr><td><code>make app-logs svc=api</code></td><td>Tails a service log: <code>ingest</code>, <code>media</code>, <code>api</code>, <code>worker</code> or <code>ui</code></td></tr>
                 <tr><td><code>make dev-ps</code>, <code>make dev-logs</code></td><td>Status and logs of the Docker data stack</td></tr>
                 <tr><td><code>make dev-reset</code></td><td><strong>Deletes all local data</strong> in <code>deploy/dev/.data</code> and restarts. Needed after a schema change.</td></tr>
                 <tr><td><code>make help</code></td><td>Lists every target</td></tr>

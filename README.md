@@ -23,7 +23,7 @@ audio as a typed primitive backed by content-addressed, deduplicated, tiered sto
 | Audio/blobs | S3-compatible (MinIO/S3/GCS) | content-addressed, immutable, tiered |
 
 Services: **ingest** (Go) · **api** (Python/FastAPI) · **media** (Go) · **workers** (Python) ·
-**sdk** (Python) · **web** (React/TS). Queue: Redpanda. Cache: Redis.
+**sdk** (Python) · **ui** (React/TS). Queue: Redpanda. Cache: Redis.
 
 ## Repository layout
 
@@ -33,7 +33,7 @@ services/ingest/    Go ingestion gateway (gRPC + HTTP, presigned uploads)
 services/api/        Python FastAPI control + query plane
 services/media/      Go streaming/media gateway (range/HLS + CDN)
 workers/             Python audio derivation workers (transcode, peaks, spectrogram)
-web/                 React + TypeScript UI (Vite)
+src/ui/              React + TypeScript UI (Vite)
 site/                project website and docs (static; `make site` serves it on :5290)
 proto/               shared protobuf definitions
 deploy/dev/          docker-compose dev stack
@@ -58,13 +58,13 @@ http://localhost:5290/docs/.
 ```bash
 git clone https://github.com/mishraprafful/resonance
 cd resonance
-make up      # data stack + venv + web deps + Go builds + all services
+make up      # data stack + venv + ui deps + Go builds + all services
 make demo    # log sample runs with metrics and audio
 ```
 
 Open http://localhost:5280 and create the platform admin account on first visit. Use
 `PYTHON=python3.12 make up` to pick an interpreter. If a port is taken, `make up` names the variable
-to override (`WEB_PORT`, `API_PORT`, `INGEST_HTTP_PORT`, `MEDIA_PORT`).
+to override (`UI_PORT`, `API_PORT`, `INGEST_HTTP_PORT`, `MEDIA_PORT`).
 
 | Service | Address |
 |---|---|

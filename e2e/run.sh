@@ -16,7 +16,7 @@ COMPOSE="docker compose -f $ROOT/deploy/dev/docker-compose.yml"
 VENV="$ROOT/.venv"
 PY="$VENV/bin/python"
 
-# E2E needs the backend services only — skip the web/vite bring-up (and its npm install).
+# E2E needs the backend services only — skip the ui/vite bring-up (and its npm install).
 export DEV_SERVICES="${DEV_SERVICES:-ingest media api worker}"
 
 # Pick a venv interpreter the scientific-stack wheels actually support. The newest CPython (e.g.
@@ -51,7 +51,7 @@ teardown() {
     $COMPOSE logs --no-color --timestamps > "$ROOT/.run/docker-stack.log" 2>&1 || true
   fi
   echo "==> tearing down app services + dev stack"
-  DEV_SERVICES="ingest media api worker web" bash "$ROOT/scripts/dev.sh" stop >/dev/null 2>&1 || true
+  DEV_SERVICES="ingest media api worker ui" bash "$ROOT/scripts/dev.sh" stop >/dev/null 2>&1 || true
   if [ -n "$STARTED_STACK" ]; then
     $COMPOSE down --remove-orphans >/dev/null 2>&1 || true
   fi
