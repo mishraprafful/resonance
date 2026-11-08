@@ -34,6 +34,7 @@ services/api/        Python FastAPI control + query plane
 services/media/      Go streaming/media gateway (range/HLS + CDN)
 workers/             Python audio derivation workers (transcode, peaks, spectrogram)
 web/                 React + TypeScript UI (Vite)
+site/                project website (static; `make site` serves it on :5290)
 proto/               shared protobuf definitions
 deploy/dev/          docker-compose dev stack
 docs/                additional design notes
