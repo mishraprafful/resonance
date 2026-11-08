@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [sdk, services/api, workers]
+        component: [src/sdk, src/services/api, src/services/workers]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [services/ingest, services/media]
+        component: [src/services/ingest, src/services/media]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

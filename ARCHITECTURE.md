@@ -259,12 +259,12 @@ Redpanda-backed, autoscaled derivation workers.
 - **Object store:** S3-compatible — MinIO / S3 / GCS, with a **CDN** in front for audio + viz.
 - **Frontend:** React + TypeScript + Vite, WaveSurfer.js, uPlot/visx for charts.
 - **Infra:** Kubernetes, Helm, Terraform, ArgoCD (GitOps), Prometheus/Grafana + OpenTelemetry.
-- **Repo:** monorepo (`sdk/`, `services/ingest`, `services/api`, `services/media`, `workers/`,
-  `src/ui/`, `deploy/`, `loadtest/`, `docs/`).
-- **Load testing / capacity certification:** k6 suite in `loadtest/` exercises the two hot paths
+- **Repo:** monorepo with code under `src/` (`sdk/`, `ui/`, `services/{api,ingest,media,workers}`,
+  `proto/`), plus `site/`, `tests/{e2e,load}`, `deploy/`, `examples/`, `scripts/` at the root.
+- **Load testing / capacity certification:** k6 suite in `tests/load/` exercises the two hot paths
   (metric ingest, audio-upload coordination + direct-to-store PUT) with SLO gates. Each release is
   certified against a named reference deployment; certified numbers are published in `README.md`
-  (design targets until a run passes on the reference rig). See `loadtest/README.md`.
+  (design targets until a run passes on the reference rig). See `tests/load/README.md`.
 
 ---
 

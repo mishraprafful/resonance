@@ -40,14 +40,22 @@ must upload **zero** bytes.
 
 Monorepo:
 ```
-sdk/                Python client library
-services/ingest/    Go ingestion gateway
-services/api/        Python FastAPI control + query plane
-services/media/      Go streaming/media gateway
-workers/             Python audio derivation workers (transcode, peaks, spectrogram)
-src/ui/              React + TypeScript UI
-deploy/              docker-compose (dev), Helm/Terraform/ArgoCD (prod)
-docs/                additional design notes
+src/
+  sdk/               Python client library (import resonance)
+  ui/                React + TypeScript UI (Vite)
+  services/
+    api/             Python FastAPI control + query plane
+    ingest/          Go ingestion gateway (metrics hot path)
+    media/           Go media gateway (range streaming, CDN-cacheable)
+    workers/         Python audio derivation workers (peaks, spectrogram, probes)
+  proto/             shared protobuf definitions
+site/                project website and docs (static; served by `make site`)
+tests/
+  e2e/               end-to-end suite against the live stack (merge gate)
+  load/              k6 load tests (capacity certification)
+deploy/dev/          docker-compose dev stack
+examples/            sample training scripts
+scripts/             dev orchestration used by `make up`
 ```
 
 ## Conventions
@@ -75,10 +83,10 @@ docs/                additional design notes
 
 ## Capacity certification
 
-Performance claims are earned, not asserted. The k6 suite in `loadtest/` gates the hot paths
+Performance claims are earned, not asserted. The k6 suite in `tests/load/` gates the hot paths
 (metric ingest p95 < 50 ms; audio-prepare p95 < 75 ms; errors < 0.1%). The **Certified capacity**
 table in `README.md` has a *design target* column and a *measured* column — only populate the
-measured column from a passing run on the reference rig described in `loadtest/README.md`. Never
+measured column from a passing run on the reference rig described in `tests/load/README.md`. Never
 publish an unmeasured number as certified. Re-certify when a hot path changes.
 
 ## Current status

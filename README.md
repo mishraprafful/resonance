@@ -28,16 +28,22 @@ Services: **ingest** (Go) · **api** (Python/FastAPI) · **media** (Go) · **wor
 ## Repository layout
 
 ```
-sdk/                Python client library  (import resonance)
-services/ingest/    Go ingestion gateway (gRPC + HTTP, presigned uploads)
-services/api/        Python FastAPI control + query plane
-services/media/      Go streaming/media gateway (range/HLS + CDN)
-workers/             Python audio derivation workers (transcode, peaks, spectrogram)
-src/ui/              React + TypeScript UI (Vite)
+src/
+  sdk/               Python client library (import resonance)
+  ui/                React + TypeScript UI (Vite)
+  services/
+    api/             Python FastAPI control + query plane
+    ingest/          Go ingestion gateway (metrics hot path)
+    media/           Go media gateway (range streaming, CDN-cacheable)
+    workers/         Python audio derivation workers (peaks, spectrogram, probes)
+  proto/             shared protobuf definitions
 site/                project website and docs (static; `make site` serves it on :5290)
-proto/               shared protobuf definitions
+tests/
+  e2e/               end-to-end suite against the live stack (merge gate)
+  load/              k6 load tests (capacity certification)
 deploy/dev/          docker-compose dev stack
-docs/                additional design notes
+examples/            sample training scripts
+scripts/             dev orchestration used by `make up`
 ```
 
 ## Installation
@@ -79,7 +85,7 @@ to override (`UI_PORT`, `API_PORT`, `INGEST_HTTP_PORT`, `MEDIA_PORT`).
 The SDK isn't on PyPI yet; install it from the clone:
 
 ```bash
-pip install -e "./sdk[audio]"
+pip install -e "./src/sdk[audio]"
 export RESONANCE_MODE=online
 export RESONANCE_API_URL=http://localhost:8000
 export RESONANCE_INGEST_URL=http://localhost:18080   # make up runs ingest on 18080, not the SDK default 8080
@@ -97,7 +103,7 @@ The dev stack uses fixed development credentials: keep it local.
 
 ## Certified capacity
 
-Capacity is certified per release by running the load-test suite ([`loadtest/`](./loadtest)) against
+Capacity is certified per release by running the load-test suite ([`tests/load/`](./tests/load)) against
 a named reference deployment and recording the load at which the SLO gates still hold. The harness
 (k6) covers the two hot paths: **metric ingest** and **audio-upload coordination + direct-to-store
 upload**.
@@ -113,7 +119,7 @@ upload**.
 
 > ⚠️ The **Design target** column states what the architecture is built to reach; the **Certified**
 > column is populated only from a passing run on the reference rig (see
-> [`loadtest/README.md`](./loadtest/README.md)). Unmeasured numbers are never published as certified.
+> [`tests/load/README.md`](./tests/load/README.md)). Unmeasured numbers are never published as certified.
 > No reference-rig certification run has been performed yet.
 >
 > **Local dev sanity (not certified):** on a single ingest replica on a laptop, a concurrent probe
@@ -127,11 +133,11 @@ Reproduce: bring up the stack + ingest gateway, then `./loadtest/run.sh http://l
 
 - **Per-component** unit/lint/typecheck: `make test` / `make lint` (CI: `.github/workflows/ci.yml`).
 - **End-to-end** (the merge gate): `make e2e` boots the full stack + services and runs the
-  [`e2e/`](./e2e) suite against the live system — SDK→ingest→ClickHouse round-trip + sharding, audio
+  [`tests/e2e/`](./tests/e2e) suite against the live system: SDK→ingest→ClickHouse round-trip + sharding, audio
   dedup/derivation/streaming, multi-tenant isolation (API + RLS), RBAC, quotas, rate limits, and
   browser auth. A passing run is the authoritative "everything works" signal
-  (CI: `.github/workflows/e2e.yml`; see [`e2e/README.md`](./e2e/README.md)).
-- **Capacity** certification: the k6 suite in [`loadtest/`](./loadtest) (see above).
+  (CI: `.github/workflows/e2e.yml`; see [`tests/e2e/README.md`](./tests/e2e/README.md)).
+- **Capacity** certification: the k6 suite in [`tests/load/`](./tests/load) (see above).
 
 ## Status
 
@@ -140,7 +146,7 @@ slices** (Go media/streaming gateway + CDN-frontable playback, event-driven Redp
 queue, ClickHouse sharding). Tracking, **audio first-class**, **audio UX depth** (A/B compare at
 original quality, lazy-presigned pagination, dataset versioning), and **multi-tenancy hardening**
 (orgs + hashed API tokens + RBAC, app-level org scoping **and** Postgres RLS, per-tenant storage
-quotas + rate limits) are all in. The [`e2e/`](./e2e) suite gates merges as the source of truth.
+quotas + rate limits) are all in. The [`tests/e2e/`](./tests/e2e) suite gates merges as the source of truth.
 
 **Next:** Phase 5 remainder + Phase 4 deferrals — SSO/OIDC, tiered storage lifecycle + CDN,
 autoscaling (HPA/KEDA), retention automation, observability (OTel/Prometheus/Grafana),

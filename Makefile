@@ -51,36 +51,36 @@ dev-reset: ## DESTROY local data (needed after a schema change) and restart the 
 
 ## --- Install / build ---
 sdk-install: ## Install the Python SDK (editable)
-	cd sdk && pip install -e ".[dev]"
+	cd src/sdk && pip install -e ".[dev]"
 api-install: ## Install the control/query API (editable)
-	cd services/api && pip install -e ".[dev]"
+	cd src/services/api && pip install -e ".[dev]"
 workers-install: ## Install the audio workers (editable)
-	cd workers && pip install -e ".[dev]"
+	cd src/services/workers && pip install -e ".[dev]"
 ui-install: ## Install ui deps
 	cd src/ui && npm install
 ingest-build: ## Build the Go ingestion gateway
-	cd services/ingest && go build ./...
+	cd src/services/ingest && go build ./...
 media-build: ## Build the Go media gateway
-	cd services/media && go build ./...
+	cd src/services/media && go build ./...
 
 ## --- Quality ---
 lint: ## Lint everything
-	cd sdk && ruff check . || true
-	cd services/api && ruff check . || true
-	cd workers && ruff check . || true
-	cd services/ingest && go vet ./... || true
-	cd services/media && go vet ./... || true
+	cd src/sdk && ruff check . || true
+	cd src/services/api && ruff check . || true
+	cd src/services/workers && ruff check . || true
+	cd src/services/ingest && go vet ./... || true
+	cd src/services/media && go vet ./... || true
 	cd src/ui && npm run lint || true
 test: ## Run all tests
-	cd sdk && pytest -q || true
-	cd services/api && pytest -q || true
-	cd services/ingest && go test ./... || true
-	cd services/media && go test ./... || true
+	cd src/sdk && pytest -q || true
+	cd src/services/api && pytest -q || true
+	cd src/services/ingest && go test ./... || true
+	cd src/services/media && go test ./... || true
 
 ## --- End-to-end suite (merge gate) ---
 e2e: ## Bring up the full stack, run the end-to-end suite against it, tear down (KEEP_UP=1 to keep)
-	./e2e/run.sh
+	./tests/e2e/run.sh
 
 ## --- Load testing / capacity certification ---
 loadtest: ## Run the k6 load-test suite (requires k6); BASE_URL overridable
-	./loadtest/run.sh $(or $(BASE_URL),http://localhost:8080)
+	./tests/load/run.sh $(or $(BASE_URL),http://localhost:8080)

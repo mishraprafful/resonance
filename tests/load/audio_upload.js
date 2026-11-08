@@ -6,7 +6,7 @@
 // proving that audio bytes never transit the gateway.
 //
 // Run:
-//   BASE_URL=http://localhost:8080 k6 run loadtest/audio_upload.js
+//   BASE_URL=http://localhost:8080 k6 run tests/load/audio_upload.js
 //
 // Tunables: VUS (default 20), DURATION (default 1m), CLIP_KB (default 256),
 //           DEDUP_RATIO (default 0.7 -> 70% of logs reuse existing content).

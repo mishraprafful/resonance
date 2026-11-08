@@ -95,7 +95,7 @@ venv() {
   # the scientific-stack wheels — numpy/soundfile/numba — which lag the newest CPython release).
   [ -d "$VENV" ] || "${PYTHON:-python3}" -m venv "$VENV"
   "$VENV/bin/pip" install -q --upgrade pip
-  "$VENV/bin/pip" install -q -e "$ROOT/sdk[audio]" -e "$ROOT/services/api" -e "$ROOT/workers" "uvicorn[standard]"
+  "$VENV/bin/pip" install -q -e "$ROOT/src/sdk[audio]" -e "$ROOT/src/services/api" -e "$ROOT/src/services/workers" "uvicorn[standard]"
   if _want ui && [ ! -d "$ROOT/src/ui/node_modules" ]; then
     echo "==> installing ui deps"
     (cd "$ROOT/src/ui" && npm install --no-audit --no-fund)
@@ -114,11 +114,11 @@ start() {
 
   if _want ingest && ! _alive ingest; then
     echo "==> building ingest gateway"
-    ( cd "$ROOT/services/ingest" && go build -o "$RUN/ingest-bin" ./cmd/ingest )
+    ( cd "$ROOT/src/services/ingest" && go build -o "$RUN/ingest-bin" ./cmd/ingest )
   fi
   if _want media && ! _alive media; then
     echo "==> building media gateway"
-    ( cd "$ROOT/services/media" && go build -o "$RUN/media-bin" ./cmd/media )
+    ( cd "$ROOT/src/services/media" && go build -o "$RUN/media-bin" ./cmd/media )
   fi
 
   echo "==> starting app services ($SERVICES)"

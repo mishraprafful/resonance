@@ -1,7 +1,7 @@
 // k6 load test — metric ingest hot path (POST /v1/metrics on the ingestion gateway).
 //
 // Run:
-//   BASE_URL=http://localhost:8080 k6 run loadtest/metrics_ingest.js
+//   BASE_URL=http://localhost:8080 k6 run tests/load/metrics_ingest.js
 //
 // Tunables via env:
 //   VUS         concurrent virtual users        (default 50)
