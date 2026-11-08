@@ -34,21 +34,66 @@ services/api/        Python FastAPI control + query plane
 services/media/      Go streaming/media gateway (range/HLS + CDN)
 workers/             Python audio derivation workers (transcode, peaks, spectrogram)
 web/                 React + TypeScript UI (Vite)
-site/                project website (static; `make site` serves it on :5290)
+site/                project website and docs (static; `make site` serves it on :5290)
 proto/               shared protobuf definitions
 deploy/dev/          docker-compose dev stack
 docs/                additional design notes
 ```
 
-## Quick start (dev)
+## Installation
+
+Full documentation lives in [`site/docs/`](./site/docs/index.html); `make site` serves it at
+http://localhost:5290/docs/.
+
+### Prerequisites
+
+- Docker with Compose v2 (runs Postgres, ClickHouse, MinIO, Redpanda, Redis)
+- Python 3.10+ (3.11 or 3.12 recommended; very new releases may lack NumPy/soundfile wheels)
+- Go 1.22+ (ingest and media gateways)
+- Node.js 20+ and npm (web UI)
+- libsndfile, if `import soundfile` fails (Linux: `libsndfile1`)
+
+### Run it locally
 
 ```bash
-make dev-up        # bring up Postgres, ClickHouse, MinIO, Redpanda, Redis
-make dev-down      # tear it down
+git clone https://github.com/mishraprafful/resonance
+cd resonance
+make up      # data stack + venv + web deps + Go builds + all services
+make demo    # log sample runs with metrics and audio
 ```
 
-Service URLs once up: Postgres `:5432`, ClickHouse `:8123`/`:9000`, MinIO S3 `:9100`/console `:9001`,
-Redpanda `:9092`, Redis `:6379`.
+Open http://localhost:5280 and create the platform admin account on first visit. Use
+`PYTHON=python3.12 make up` to pick an interpreter. If a port is taken, `make up` names the variable
+to override (`WEB_PORT`, `API_PORT`, `INGEST_HTTP_PORT`, `MEDIA_PORT`).
+
+| Service | Address |
+|---|---|
+| Web UI | http://localhost:5280 |
+| Control API (OpenAPI at `/docs`) | http://localhost:8000 |
+| Ingest gateway | http://localhost:18080 |
+| Media gateway | http://localhost:8090 |
+| Postgres / ClickHouse / MinIO S3 / Redpanda / Redis | `:5432` / `:8123` / `:9100` / `:9092` / `:6379` |
+
+### Log from your own code
+
+The SDK isn't on PyPI yet; install it from the clone:
+
+```bash
+pip install -e "./sdk[audio]"
+export RESONANCE_MODE=online
+export RESONANCE_API_URL=http://localhost:8000
+export RESONANCE_INGEST_URL=http://localhost:18080   # make up runs ingest on 18080, not the SDK default 8080
+python train.py
+```
+
+### Stop and reset
+
+```bash
+make down        # stop services and the data stack (data kept)
+make dev-reset   # DELETE local data and restart; needed after a schema change
+```
+
+The dev stack uses fixed development credentials: keep it local.
 
 ## Certified capacity
 
