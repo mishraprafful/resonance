@@ -15,17 +15,17 @@ caught here rather than in production.
 ```bash
 make e2e                      # bring up the full stack + services, run the suite, tear down
 KEEP_UP=1 make e2e            # leave everything running afterwards (debug a failure)
-E2E_NO_STACK=1 ./e2e/run.sh   # run against an already-up stack (e.g. you ran `make up`)
-E2E_PYTEST_ARGS="-k audio -x" ./e2e/run.sh   # focus on one plane, stop on first failure
+E2E_NO_STACK=1 ./tests/e2e/run.sh   # run against an already-up stack (e.g. you ran `make up`)
+E2E_PYTEST_ARGS="-k audio -x" ./tests/e2e/run.sh   # focus on one plane, stop on first failure
 ```
 
-`make e2e` is `e2e/run.sh`, which: brings up the docker dev stack → waits for the data planes →
+`make e2e` is `tests/e2e/run.sh`, which: brings up the docker dev stack → waits for the data planes →
 builds + starts the backend services (`ingest`, `media`, `api`, `worker`) on the host via
-`scripts/dev.sh` (web/vite is skipped via `DEV_SERVICES`) → waits for them → runs `pytest` → tears
+`scripts/dev.sh` (ui/vite is skipped via `DEV_SERVICES`) → waits for them → runs `pytest` → tears
 everything down. Service logs are left under `.run/*.log` on failure.
 
 Requirements: Docker + `docker compose`, Go 1.22, Python 3.11, and `libsndfile` (for `soundfile`).
-Everything else installs into the shared `.venv` (`e2e/requirements.txt` + the editable SDK/API/
+Everything else installs into the shared `.venv` (`tests/e2e/requirements.txt` + the editable SDK/API/
 workers).
 
 ## What it covers (and where each criterion lives)

@@ -1,5 +1,5 @@
 # E2E suite dependencies. Most are already present in the dev venv (pulled in by sdk[audio] +
-# services/api + workers); listed here so the suite is self-contained and installs cleanly into any
+# src/services/api + src/services/workers); listed here so the suite is self-contained and installs cleanly into any
 # venv. The SDK itself (`resonance`) is installed editable by `scripts/dev.sh venv`.
 pytest>=8.0
 pytest-timeout>=2.3

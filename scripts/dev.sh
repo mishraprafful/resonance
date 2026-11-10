@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Local dev orchestration for Resonance: runs the app services (ingest, media, api, worker, web) on
+# Local dev orchestration for Resonance: runs the app services (ingest, media, api, worker, ui) on
 # the host against the docker dev stack. Managed via pid/log files under .run/.
 #
-#   scripts/dev.sh venv     # create .venv and install python deps + web deps
-#   scripts/dev.sh start     # start ingest + media + api + worker + web (background)
+#   scripts/dev.sh venv     # create .venv and install python deps + ui deps
+#   scripts/dev.sh start     # start ingest + media + api + worker + ui (background)
 #   scripts/dev.sh stop      # stop them
 #   scripts/dev.sh status    # show what's running
-#   scripts/dev.sh logs [svc]# tail logs (all, or one of: ingest api worker web)
+#   scripts/dev.sh logs [svc]# tail logs (all, or one of: ingest api worker ui)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,12 +18,12 @@ PY="$VENV/bin/python"
 # Resonance-specific ports, chosen to avoid common defaults (vite 5173, etc.). Override via env.
 export INGEST_HTTP_PORT="${INGEST_HTTP_PORT:-18080}"
 export API_PORT="${API_PORT:-8000}"
-export WEB_PORT="${WEB_PORT:-5280}"
+export UI_PORT="${UI_PORT:-5280}"
 export MEDIA_PORT="${MEDIA_PORT:-8090}"
 
 # Which app services to manage. Defaults to all; the e2e harness (and CI) set
-# DEV_SERVICES="ingest media api worker" to skip the vite/web bring-up (and its npm install).
-SERVICES="${DEV_SERVICES:-ingest media api worker web}"
+# DEV_SERVICES="ingest media api worker" to skip the vite/ui bring-up (and its npm install).
+SERVICES="${DEV_SERVICES:-ingest media api worker ui}"
 _want() { case " $SERVICES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 # Service env — defaults line up with deploy/dev/docker-compose.yml.
@@ -95,10 +95,10 @@ venv() {
   # the scientific-stack wheels — numpy/soundfile/numba — which lag the newest CPython release).
   [ -d "$VENV" ] || "${PYTHON:-python3}" -m venv "$VENV"
   "$VENV/bin/pip" install -q --upgrade pip
-  "$VENV/bin/pip" install -q -e "$ROOT/sdk[audio]" -e "$ROOT/services/api" -e "$ROOT/workers" "uvicorn[standard]"
-  if _want web && [ ! -d "$ROOT/web/node_modules" ]; then
-    echo "==> installing web deps"
-    (cd "$ROOT/web" && npm install --no-audit --no-fund)
+  "$VENV/bin/pip" install -q -e "$ROOT/src/sdk[audio]" -e "$ROOT/src/services/api" -e "$ROOT/src/services/workers" "uvicorn[standard]"
+  if _want ui && [ ! -d "$ROOT/src/ui/node_modules" ]; then
+    echo "==> installing ui deps"
+    (cd "$ROOT/src/ui" && npm install --no-audit --no-fund)
   fi
   echo "==> deps ready"
 }
@@ -110,15 +110,15 @@ start() {
   _want ingest && { _alive ingest || _preflight "$INGEST_HTTP_PORT" ingest INGEST_HTTP_PORT; }
   _want api    && { _alive api    || _preflight "$API_PORT" api API_PORT; }
   _want media  && { _alive media  || _preflight "$MEDIA_PORT" media MEDIA_PORT; }
-  _want web    && { _alive web    || _preflight "$WEB_PORT" web WEB_PORT; }
+  _want ui     && { _alive ui     || _preflight "$UI_PORT" ui UI_PORT; }
 
   if _want ingest && ! _alive ingest; then
     echo "==> building ingest gateway"
-    ( cd "$ROOT/services/ingest" && go build -o "$RUN/ingest-bin" ./cmd/ingest )
+    ( cd "$ROOT/src/services/ingest" && go build -o "$RUN/ingest-bin" ./cmd/ingest )
   fi
   if _want media && ! _alive media; then
     echo "==> building media gateway"
-    ( cd "$ROOT/services/media" && go build -o "$RUN/media-bin" ./cmd/media )
+    ( cd "$ROOT/src/services/media" && go build -o "$RUN/media-bin" ./cmd/media )
   fi
 
   echo "==> starting app services ($SERVICES)"
@@ -126,15 +126,15 @@ start() {
   _want media  && _spawn media  "$RUN/media-bin"
   _want api    && _spawn api    "$VENV/bin/uvicorn" resonance_api.main:app --host 127.0.0.1 --port "$API_PORT"
   _want worker && _spawn worker env POSTGRES_DSN="$PG_SUPER_DSN" "$PY" -m resonance_workers.main
-  _want web    && _spawn web    "$ROOT/web/node_modules/.bin/vite" "$ROOT/web" --port "$WEB_PORT" --strictPort
+  _want ui     && _spawn ui     "$ROOT/src/ui/node_modules/.bin/vite" "$ROOT/src/ui" --port "$UI_PORT" --strictPort
   echo
-  echo "==> Resonance is up. Open: http://localhost:$WEB_PORT"
+  echo "==> Resonance is up. Open: http://localhost:$UI_PORT"
   echo "    (api :$API_PORT, ingest :$INGEST_HTTP_PORT)  —  'make demo' to log a sample run"
 }
 
 stop() {
   echo "==> stopping app services"
-  for name in ingest media api worker web; do
+  for name in ingest media api worker ui; do
     local f; f="$(_pid_file "$name")"
     if [ -f "$f" ]; then
       local p; p="$(cat "$f")"
@@ -148,7 +148,7 @@ stop() {
 }
 
 status() {
-  for name in ingest media api worker web; do
+  for name in ingest media api worker ui; do
     if _alive "$name"; then echo "  $name: UP (pid $(cat "$(_pid_file "$name")"))"; else echo "  $name: down"; fi
   done
 }

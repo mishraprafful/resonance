@@ -18,7 +18,7 @@ vendor/
 
 # Node / web
 node_modules/
-web/dist/
+src/ui/dist/
 *.local
 
 # Env / secrets
@@ -40,8 +40,8 @@ deploy/dev/.data/
 .resonance/
 
 # Go build artifacts (binaries named after package dir)
-services/media/media
-services/ingest/ingest
+src/services/media/media
+src/services/ingest/ingest
 
 # TS build info
 *.tsbuildinfo

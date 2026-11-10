@@ -21,10 +21,10 @@ suppresses uploads (`DEDUP_RATIO`, default 0.7).
 # bring the stack + ingest gateway up first, then:
 ./loadtest/run.sh http://localhost:8080
 # or a single scenario:
-VUS=200 DURATION=3m BASE_URL=http://localhost:8080 k6 run loadtest/metrics_ingest.js
+VUS=200 DURATION=3m BASE_URL=http://localhost:8080 k6 run tests/load/metrics_ingest.js
 ```
 
-Summaries are written to `loadtest/results/<timestamp>/*.json`. Promote a passing run's numbers into
+Summaries are written to `tests/load/results/<timestamp>/*.json`. Promote a passing run's numbers into
 the **Certified capacity** table in the root `README.md`.
 
 ## Reference deployment (the spec numbers are certified against)

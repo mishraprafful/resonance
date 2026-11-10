@@ -2,7 +2,7 @@ name: e2e
 
 # End-to-end gate: boots the full docker stack + all backend services and runs the E2E suite
 # against the live system. A green run here is the authoritative "the whole product works" signal.
-# Make this a REQUIRED status check in branch protection on `main` (see e2e/README.md).
+# Make this a REQUIRED status check in branch protection on `main` (see tests/e2e/README.md).
 
 on:
   push:

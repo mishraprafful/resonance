@@ -2,7 +2,7 @@
 # importable package. Runtime deps live in requirements.txt (installed into the shared dev venv).
 
 [tool.pytest.ini_options]
-# rootdir is e2e/ (run.sh cd's here), so "." puts helpers.py + conftest.py on the import path.
+# rootdir is tests/e2e/ (run.sh cd's here), so "." puts helpers.py + conftest.py on the import path.
 pythonpath = ["."]
 testpaths = ["."]
 # A generous per-test cap: most time is spent waiting on async derivation / the ingest flush, not
